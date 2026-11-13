@@ -311,3 +311,36 @@ details.memo > summary { cursor: pointer; }
 details.memo[open] > summary { margin-bottom: 6px; }
 details.memo ul { margin: 6px 0 0; padding-left: 18px; }
 details.memo li { margin: 6px 0; line-height: 1.45; }
+
+/* Étape 4 : caractéristiques à modificateur, valeurs calculées, voies, armes */
+.grille-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.grille-4 > button { padding: 8px 4px; font-size: .92rem; }
+.niveau { margin-top: 6px; align-items: center; }
+.derivees { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 10px; }
+.derivee { display: flex; flex-direction: column; align-items: flex-start; padding: 8px 10px; min-height: 0; background: var(--fond); border: 1px solid var(--bord); border-radius: 12px; text-align: left; }
+.derivee small { font-size: .7rem; color: var(--texte-2); }
+.derivee strong { font-size: 1.05rem; }
+.reglages-test { margin-top: 10px; align-items: flex-end; }
+.reglages-test .stepper { flex: 1 1 0; }
+.reglages-test input[type="number"] { width: 100%; flex: 1 1 auto; }
+.meta.mention { color: var(--accent); }
+.voie { border-top: 1px solid var(--bord); padding: 8px 0; }
+.voie summary { cursor: pointer; padding: 4px 0; }
+.voie textarea { margin-top: 8px; }
+ol.caps { list-style: none; margin: 8px 0; padding: 0; }
+ol.caps li { display: flex; gap: 8px; padding: 4px 0; color: var(--texte-2); font-size: .92rem; }
+ol.caps li.acquise { color: var(--texte); font-weight: 600; }
+ol.caps li .n { flex: 0 0 22px; text-align: center; border-radius: 6px; border: 1px solid var(--bord); font-size: .8rem; }
+ol.caps li.acquise .n { background: var(--accent); color: var(--accent-texte); border-color: var(--accent); }
+.ajout-voie { margin-top: 12px; border-top: 1px solid var(--bord); padding-top: 10px; }
+.ligne-arme { display: flex; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--bord); }
+.ligne-arme:last-of-type { border-bottom: 0; }
+.ligne-arme .arme-nom { flex: 1 1 auto; min-width: 0; }
+.ligne-arme > button { flex: 0 0 auto; padding: 8px 10px; }
+.repartition { display: grid; gap: 6px; }
+.rep-ligne { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rep-ligne select { flex: 0 0 96px; }
+.grille-edition { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.grille-edition label { display: flex; flex-direction: column; gap: 2px; font-size: .85rem; }
+.grille-edition input { text-align: center; }
+.edition-arme { border-top: 1px solid var(--bord); padding: 8px 0; display: grid; gap: 6px; }

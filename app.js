@@ -3,7 +3,7 @@
    sont importés par l'utilisateur et restent stockés sur l'appareil. */
 'use strict';
 
-const VERSION_APP = '1.2.2';
+const VERSION_APP = '1.3.0';
 const FORMAT_ORACLE = 'carnet-jdr-oracle';
 const FORMAT_SAUVEGARDE = 'carnet-jdr-sauvegarde';
 const FACES = [4, 6, 8, 10, 12, 20, 100];
@@ -207,7 +207,7 @@ function validerOracle(d) {
 
 function resumeContenu(d) {
   if (d.format === FORMAT_MODULE) {
-    return `module de jeu : ${Object.values(d.fiches || {}).map(f => f.nom).join(', ')} · ${(d.tables || []).length} tables`;
+    return `module de jeu : ${Object.values(d.fiches || {}).map(f => f.nom).join(', ')} · ${(d.tables || []).length} tables${(d.voies || []).length ? ` · ${d.voies.length} voies` : ''}`;
   }
   const parts = [];
   if (d.ouiNon) parts.push(`oui/non (${d.ouiNon.probabilites.length} probabilités)`);
@@ -718,9 +718,11 @@ function rendreResultatJet(r) {
     ${r.libelle ? `<div class="meta">${esc(r.libelle)}</div>` : ''}
     <div class="reponse ${r.reussite === true ? 'oui' : r.reussite === false ? 'non' : ''}">${r.totalForce ?? r.total}</div>
     ${r.reussite != null ? `<div class="meta"><strong>${r.reussite ? 'Réussite' : 'Échec'}</strong> (seuil ${r.comp === '<=' ? '≤' : '≥'} ${r.seuil})</div>` : ''}
+    ${r.mention ? `<div class="meta mention"><strong>${esc(r.mention)}</strong></div>` : ''}
     ${r.des.length > 1 || r.mod ? `<div class="des-detail">${des}${r.mod ? `<span class="discret">${signe(r.mod)}</span>` : ''}</div>` : ''}
     <div class="meta">${esc(r.formule)} · dés ${r.physique ? 'physiques' : 'virtuels'}</div>
-    ${r.totalForce != null ? `<div class="force">Total forcé (le jet donnait ${r.total})</div>` : ''}
+    ${r.totalForce != null ? `<div class="force">${r.chance ? 'Point de chance dépensé' : 'Total forcé'} (le jet donnait ${r.total})</div>` : ''}
+    ${typeof boutonsJetSupp === 'function' ? boutonsJetSupp(r) : ''}
     ${r.choixForcage ? `<div class="rangee" style="margin-top:10px"><input type="number" inputmode="numeric" id="total-force" placeholder="total"><button data-action="forcer-total">Valider</button></div>`
       : `<button class="lien" data-action="choix-forcage-jet">Forcer un autre total</button>`}
   </div>`;
@@ -758,7 +760,7 @@ function texteEntree(h) {
     case 'mots': return `${h.tirage} : ${h.mots.map(m => `${m.mot} (${m.valeur})`).join(' + ')}${h.physique ? ' — dés physiques' : ''}`;
     case 'tourment': return `Déplacement — Tourment ${h.ligne}, d${h.de ?? 6} = ${h.valeur} → ${h.nb} carte(s)${h.physique ? ', dé physique' : ''}${h.cartes.length ? ' : ' + h.cartes.map(c => c.titre).join(', ') : ''}`;
     case 'carte': return `Carte${h.ajout ? ' ajoutée' : ''} : ${h.cartes.map(c => `${c.titre} (${c.deck})`).join(', ')}`;
-    case 'jet': return `${h.libelle ? h.libelle + ' — ' : ''}${detailJet(h)}${h.reussite != null ? ` (${h.comp === '<=' ? '≤' : '≥'} ${h.seuil} : ${h.reussite ? 'réussite' : 'échec'})` : ''}${h.physique ? ', dés physiques' : ''}`;
+    case 'jet': return `${h.libelle ? h.libelle + ' — ' : ''}${detailJet(h)}${h.reussite != null ? ` (${h.comp === '<=' ? '≤' : '≥'} ${h.seuil} : ${h.reussite ? 'réussite' : 'échec'})` : ''}${h.mention ? ' — ' + h.mention : ''}${h.physique ? ', dés physiques' : ''}`;
     case 'table': return `${h.libelle ? h.libelle + ' — ' : ''}${(h.resultats || []).map(r => `${r.table} (${r.de} = ${r.valeur}) → ${r.texte}`).join(' ; ')}${h.physique ? ', dés physiques' : ''}`;
     case 'fiche': return h.texte;
     case 'derogation': return `Dérogation — ${h.texte}`;

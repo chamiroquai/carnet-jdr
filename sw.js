@@ -1,7 +1,7 @@
 /* Service worker : met en cache le moteur pour un usage hors ligne.
    Aucun contenu de jeu ne transite ici (ils sont dans IndexedDB). */
-const CACHE = 'carnet-jdr-v1.2.2';
-const FICHIERS = ['./', './index.html', './styles.css', './jeu.js', './app.js', './manifest.webmanifest'];
+const CACHE = 'carnet-jdr-v1.3.0';
+const FICHIERS = ['./', './index.html', './styles.css', './jeu.js', './systeme.js', './app.js', './manifest.webmanifest'];
 // Les icônes sont facultatives : leur absence ne doit pas empêcher le mode hors ligne.
 const ICONES = ['./icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 

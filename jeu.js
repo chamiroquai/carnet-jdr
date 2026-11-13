@@ -66,6 +66,7 @@ function validerModule(d) {
   }
   if (d.memo != null && (!Array.isArray(d.memo) || d.memo.some(x => !x || !x.titre || !Array.isArray(x.points)))) avert.push('Section « memo » mal formée (attendu : liste de { titre, points }).');
   for (const g of d.generateurs || []) for (const id of g.tables || []) if (!ids.has(id)) avert.push(`Générateur « ${g.nom} » : table « ${id} » introuvable.`);
+  if (typeof validerModulePlus === 'function') validerModulePlus(d, erreurs, avert);
   return { erreurs, avert };
 }
 function minFormule(f) { return (f.garde !== 'tous' ? f.k : f.n) + (f.mod || 0); }
@@ -144,7 +145,7 @@ function nouvelleFiche(mod, type, role) {
   const f = { id: nouvelId(), type, role: role || '', creeLe: maintenant(), jauges: {}, compteurs: {}, champs: {}, inventaire: {}, surplus: [] };
   for (const j of def.jauges || []) f.jauges[j.id] = { max: j.max ?? 0, act: j.max ?? 0 };
   for (const c of def.compteurs || []) f.compteurs[c.id] = c.defaut ?? 0;
-  return f;
+  return completerFiche(f, def);
 }
 
 function tailleGroupe(f, g) {
@@ -231,6 +232,7 @@ function appliquerEffets(c, effets) {
       if (ef.fixer != null) c.fiche.compteurs[ef.compteur] = ef.fixer;
       if (ef.mod) c.fiche.compteurs[ef.compteur] = (c.fiche.compteurs[ef.compteur] || 0) + ef.mod;
     }
+    appliquerEffetPlus(c.fiche, ef);
   }
   synchroniserCreation(c);
 }
@@ -246,12 +248,14 @@ async function commencerCreation(type, role, vierge) {
   const fiche = nouvelleFiche(mod, type, role);
   const def = defFiche(mod, type);
   if (vierge || !(def.creation || []).length) {
+    recalculerFiche(mod, fiche, def);
     etat.partie.fiches = [...(etat.partie.fiches || []), fiche];
     await sauverPartie();
     etat.ficheOuverte = fiche.id; etat.ficheEdition = true;
     return rendre();
   }
   etat.partie.creation = { type, role, pas: 0, fiche, vars: {}, bases: {}, modifs: {}, resume: [], courant: null };
+  sauterEtapesInactives(mod, etat.partie.creation);
   await sauverPartie();
   rendre();
 }
@@ -304,6 +308,7 @@ function tirerEtape(mod, c, p, valeurs, choixManuel) {
 
 /* Applique le résultat validé de l'étape courante à la fiche en création */
 function validerEtape(mod, c, p) {
+  if (['repartition', 'ajustement', 'voie', 'voies'].includes(p.type)) return validerEtapePlus(mod, c, p);
   const r = c.courant;
   const f = c.fiche;
   const lignes = [];
@@ -313,6 +318,7 @@ function validerEtape(mod, c, p) {
     if (!e) return;
     if (e.var) Object.assign(c.vars, e.var);
     if (e.champs) for (const [k, v] of Object.entries(e.champs)) ajouterChamp(f, k, v, true);
+    if (e.armes) f.armes = [...(f.armes || []), ...e.armes.map(a => ({ ...a }))];
     appliquerEffets(c, e.effets);
   };
   if (p.type === 'table' && r) {
@@ -327,7 +333,7 @@ function validerEtape(mod, c, p) {
       } else if (genre === 'inventaire') ajouterChamp(f, 'notes', premier.texte, true);
       else if (genre === 'champ') {
         const detailIci = p.detail === cible && premier.detail;
-        ajouterChamp(f, id, detailIci ? `${premier.texte} — ${premier.detail}` : premier.texte, (p.repeter || 1) > 1);
+        ajouterChamp(f, id, detailIci ? `${premier.texte} — ${premier.detail}` : premier.texte, (p.repeter || 1) > 1 || !!p.ajouter);
       }
       if (p.detail && p.detail !== cible && premier.detail) ajouterChamp(f, p.detail.split(':')[1], premier.detail, true);
       appliquerEntree(e);
@@ -363,8 +369,14 @@ function validerEtape(mod, c, p) {
     }
     if (vus.length) lignes.push(`${p.nom} : renseigné`);
   } else if (p.type === 'objets') {
-    for (const o of p.objets || []) placerObjet(f, defFiche(mod, c.type), { texte: o.texte, encombrant: !!o.encombrant }, o.groupe);
-    lignes.push(`${p.nom} : ${(p.objets || []).map(o => o.texte).join(', ')}`);
+    const liste = objetsEtape(p, c.vars);
+    if (genre === 'champ') ajouterChamp(f, id, liste.map(o => o.texte).join('\n'), true);
+    else for (const o of liste) placerObjet(f, defFiche(mod, c.type), { texte: o.texte, encombrant: !!o.encombrant }, o.groupe);
+    for (const o of liste) {
+      if (o.arme) f.armes = [...(f.armes || []), { nom: o.arme.nom || o.texte, attaque: o.arme.attaque || '', dm: o.arme.dm || '', notes: o.arme.notes || '' }];
+      appliquerEffets(c, o.effets);
+    }
+    lignes.push(`${p.nom} : ${liste.map(o => o.texte).join(', ')}`);
   }
   c.resume.push(...lignes);
 }
@@ -375,6 +387,10 @@ async function terminerCreation() {
   const def = defFiche(mod, c.type);
   synchroniserCreation(c);
   const f = c.fiche;
+  f.vars = { ...(f.vars || {}), ...c.vars };
+  if (def.voies) f.pointsGratuits = coutVoies(mod, f, def);
+  recalculerFiche(mod, f, def);
+  for (const j of def.jauges || []) if (j.maxFormule && f.jauges[j.id]) f.jauges[j.id].act = f.jauges[j.id].max;
   etat.partie.fiches = [...(etat.partie.fiches || []), f];
   delete etat.partie.creation;
   await noter({ type: 'fiche', texte: `Création : ${nomFiche(f, def)} (${def.nom}${f.role ? ', ' + roleFr(f.role) : ''})`, details: c.resume });
@@ -424,7 +440,7 @@ function vueMemo(mod) {
 }
 
 function resumeJauges(f, def) {
-  return (def.jauges || []).map(j => `${esc(j.abr || j.nom)} ${f.jauges[j.id]?.act ?? 0}/${f.jauges[j.id]?.max ?? 0}`).join(' · ');
+  return (def.jauges || []).filter(j => !(j.masquerSiZero && !(f.jauges[j.id]?.max))).map(j => `${esc(j.abr || j.nom)} ${f.jauges[j.id]?.act ?? 0}/${f.jauges[j.id]?.max ?? 0}`).join(' · ');
 }
 
 function vueListeFiches(mod) {
@@ -438,7 +454,7 @@ function vueListeFiches(mod) {
     if (!def) return `<div class="carte"><div class="titre">${esc(f.champs?.nom || 'Fiche')}</div><p class="discret petit">Type « ${esc(f.type)} » absent du module actuel.</p></div>`;
     return `<div class="carte fiche-resume ${f.role === 'principal' ? 'principal' : ''}" data-action="jeu-ouvrir" data-id="${esc(f.id)}">
       <div class="titre">${esc(nomFiche(f, def))} ${f.role === 'principal' ? '<span class="etiquette">principal</span>' : ''}</div>
-      <div class="discret petit">${esc(def.nom)}${f.champs.creature ? ' · ' + esc(f.champs.creature) : ''}${f.champs.classe ? ' · ' + esc(f.champs.classe) : ''}${f.champs.role ? ' · ' + esc(f.champs.role) : ''}</div>
+      <div class="discret petit">${esc(def.nom)}${def.niveau ? ` · niv. ${f.niveau ?? 1}` : ''}${(def.resume || ['creature', 'classe', 'role']).filter(k => f.champs[k]).map(k => ' · ' + esc(f.champs[k])).join('')}</div>
       <div class="petit" style="margin-top:4px">${resumeJauges(f, def)}</div>
     </div>`;
   }).join('');
@@ -481,7 +497,7 @@ function vueCreation(mod, c) {
       ${corpsEtape(mod, c, p, r)}
       <div class="rangee" style="margin-top:12px">
         <button class="lien" data-action="cr-passer">${p.facultatif || p.type === 'saisie' ? 'Passer' : 'Passer cette étape'}</button>
-        ${(r && !r.erreur) || ['saisie', 'objets'].includes(p.type) ? `<button class="principal" style="flex:2" data-action="cr-valider">Valider et continuer</button>` : ''}
+        ${(r && !r.erreur && !['ajustement', 'voies'].includes(p.type)) || ETAPES_SANS_JET.includes(p.type) ? `<button class="principal" style="flex:2" data-action="cr-valider">Valider et continuer</button>` : ''}
       </div>`;
   }
   return `<div class="carte creation">
@@ -506,6 +522,7 @@ function lireValeursPhysiques(id, n, faces) {
 }
 
 function corpsEtape(mod, c, p, r) {
+  if (['repartition', 'ajustement', 'voie', 'voies', 'objets'].includes(p.type)) return corpsEtapePlus(mod, c, p, r);
   if (p.type === 'table') {
     const tid = remplirModele(p.table, c.vars);
     const t = tableParId(mod, tid);
@@ -570,7 +587,6 @@ function corpsEtape(mod, c, p, r) {
       return `<h3>${esc(ch.nom)}</h3>${ch.long ? `<textarea id="cr-${esc(id)}" rows="3">${esc(v)}</textarea>` : `<input type="text" id="cr-${esc(id)}" value="${esc(v)}">`}`;
     }).join('');
   }
-  if (p.type === 'objets') return `<ul class="liste-simple">${(p.objets || []).map(o => `<li>${esc(o.texte)}</li>`).join('')}</ul>`;
   return '';
 }
 
@@ -580,7 +596,7 @@ function apercuCreation(mod, c) {
   const champs = champsDef(def).filter(ch => f.champs[ch.id]);
   const objets = (def.inventaire?.groupes || []).flatMap(g => (f.inventaire[g.id] || []).filter(x => x && !x.suite).map(x => x.texte));
   return `<details class="de-physique" data-garde="cr-apercu"><summary>Aperçu de la fiche</summary>
-    <p class="petit">${resumeJauges(f, def)}</p>
+    ${apercuCreationPlus(mod, c) || `<p class="petit">${resumeJauges(f, def)}</p>`}
     <p class="petit">${(def.compteurs || []).map(k => `${esc(k.nom)} ${f.compteurs[k.id] ?? 0}`).join(' · ')}</p>
     ${champs.map(ch => `<p class="petit"><strong>${esc(ch.nom)} :</strong> ${esc(f.champs[ch.id])}</p>`).join('')}
     ${objets.length ? `<p class="petit"><strong>Inventaire :</strong> ${esc(objets.join(', '))}</p>` : ''}
@@ -609,21 +625,25 @@ function vueFiche(mod, f) {
     </div>
     <div class="carte">
       <div class="titre grand">${esc(nom)} ${f.role === 'principal' ? '<span class="etiquette">principal</span>' : f.role ? `<span class="discret petit">· ${esc(roleFr(f.role))}</span>` : ''}</div>
-      <div class="discret petit">${esc(def.nom)}${f.champs.creature ? ' · ' + esc(f.champs.creature) : ''}${f.champs.taille ? ' (' + esc(f.champs.taille.toLowerCase()) + ')' : ''}${f.champs.classe ? ' · ' + esc(f.champs.classe) : ''}</div>
-      <div class="jauges">${(def.jauges || []).map(j => {
+      <div class="discret petit">${esc(def.nom)}${def.resume ? def.resume.filter(k => f.champs[k]).map(k => ' · ' + esc(f.champs[k])).join('') : `${f.champs.creature ? ' · ' + esc(f.champs.creature) : ''}${f.champs.taille ? ' (' + esc(f.champs.taille.toLowerCase()) + ')' : ''}${f.champs.classe ? ' · ' + esc(f.champs.classe) : ''}`}</div>
+      ${vueEnteteFichePlus(mod, f, def)}
+      <div class="jauges">${(def.jauges || []).filter(j => !(j.masquerSiZero && !(f.jauges[j.id]?.max))).map(j => {
         const v = f.jauges[j.id] || { max: 0, act: 0 };
+        const deJ = j.deVar && f.vars?.[j.deVar] ? ` (d${esc(f.vars[j.deVar])})` : '';
         return `<div class="jauge ${v.act <= 0 && v.max > 0 ? 'zero' : ''}">
-          <div class="j-nom">${esc(j.abr || j.nom)}<small>${esc(j.nom)}</small></div>
+          <div class="j-nom">${esc(j.abr || j.nom)}${deJ}<small>${esc(j.nom)}</small></div>
           <div class="j-val">${v.act}<small>/${v.max}</small></div>
           <div class="rangee serree"><button data-action="j-moins" data-j="${esc(j.id)}" aria-label="Moins">−</button><button data-action="j-plus" data-j="${esc(j.id)}" aria-label="Plus">+</button></div>
         </div>`;
       }).join('')}</div>
       ${(def.jauges || []).filter(j => j.zero && (f.jauges[j.id]?.act ?? 1) <= 0 && f.jauges[j.id]?.max > 0).map(j => `<p class="force">${esc(j.zero)}</p>`).join('')}
+      ${(def.jauges || []).filter(j => j.bas && (f.jauges[j.id]?.act ?? 0) > 0 && f.jauges[j.id].act <= j.bas.seuil).map(j => `<p class="force">${esc(j.bas.texte)}</p>`).join('')}
       ${(def.compteurs || []).length ? `<div class="compteurs">${def.compteurs.map(k => `<button class="compteur" data-action="cpt" data-k="${esc(k.id)}">
           <small>${esc(k.nom)}</small><strong>${(f.compteurs[k.id] ?? 0).toLocaleString('fr-FR')}</strong></button>`).join('')}</div>` : ''}
     </div>`;
 
-  if (test && testables.length) {
+  if (test?.mode === 'bonus' && def.caracs) html += vueTestsBonus(mod, f, def);
+  else if (test && testables.length) {
     html += `<div class="carte">
       <h2>${esc(test.nom || 'Test')}s</h2>
       <div class="puces">${[['normal', 'Normal'], ['avantage', 'Avantage'], ['desavantage', 'Désavantage']].map(([k, l]) =>
@@ -639,12 +659,13 @@ function vueFiche(mod, f) {
     </div>`;
   }
 
+  if (def.armes) html += vueArmes(mod, f, def);
   if (def.degats) {
     const cfg = def.degats;
     html += `<div class="carte">
-      <h2>Subir des dégâts</h2>
-      <div class="rangee"><input type="number" inputmode="numeric" id="dg-n" placeholder="dégâts">
-        <button data-action="dg">Appliquer</button></div>
+      <h2>${esc(cfg.titre || 'Subir des dégâts')}</h2>
+      <div class="rangee"><input type="number" inputmode="numeric" id="dg-n" placeholder="${esc(cfg.placeholder || 'dégâts')}">
+        <button data-action="dg">${esc(cfg.bouton || 'Appliquer')}</button>${cfg.soins ? `<button data-action="dg-soin">${esc(cfg.soins)}</button>` : ''}</div>
       ${cfg.armure ? `<label class="case petit"><input type="checkbox" id="dg-sans-armure"> Ignorer l'armure (${f.compteurs[cfg.armure] ?? 0})</label>` : ''}
       ${deg ? `<div class="resultat gauche">${deg.lignes.map(l => `<div>${esc(l)}</div>`).join('')}
         ${deg.exact && cfg.zeroExact?.table ? `<p class="force">${esc(cfg.zeroExact.texte || '')}</p><button data-action="fiche-table" data-t="${esc(cfg.zeroExact.table)}">Lancer : ${esc(tableParId(mod, cfg.zeroExact.table)?.nom || cfg.zeroExact.table)}</button>` : ''}
@@ -667,6 +688,7 @@ function vueFiche(mod, f) {
     </div>`;
   }
 
+  if (def.voies) html += vueVoies(mod, f, def);
   if (def.inventaire) html += vueInventaire(f, def, occ);
 
   const champs = champsDef(def).filter(ch => ch.id !== 'nom' && f.champs[ch.id]);
@@ -733,14 +755,16 @@ function editeurSlot(f, def, gid, i, x) {
 }
 
 function vueFicheEdition(mod, f, def) {
+  completerFiche(f, def);
   return `<div class="carte">
     <h2>Modifier la fiche</h2>
     <h3>Rôle</h3>
     <select id="fe-role">${[['principal', 'Personnage principal'], ['secondaire', 'Secondaire'], ['', 'Aucun']].map(([k, l]) => `<option value="${k}" ${f.role === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
-    ${(def.jauges || []).length ? `<h3>Jauges (actuel / max)</h3>${def.jauges.map(j => `<div class="rangee edition-jauge">
-      <span>${esc(j.nom)}</span>
+    ${vueEditionPlus(mod, f, def)}
+    ${(def.jauges || []).length ? `<h3>Jauges (actuel${def.jauges.every(j => j.maxFormule) ? '' : ' / max'})</h3>${def.jauges.map(j => `<div class="rangee edition-jauge">
+      <span>${esc(j.nom)}${j.maxFormule ? ` <small class="discret">max ${f.jauges[j.id]?.max ?? 0}, calculé</small>` : ''}</span>
       <input type="number" inputmode="numeric" id="fe-j-${esc(j.id)}-act" value="${f.jauges[j.id]?.act ?? 0}">
-      <input type="number" inputmode="numeric" id="fe-j-${esc(j.id)}-max" value="${f.jauges[j.id]?.max ?? 0}">
+      ${j.maxFormule ? '' : `<input type="number" inputmode="numeric" id="fe-j-${esc(j.id)}-max" value="${f.jauges[j.id]?.max ?? 0}">`}
     </div>`).join('')}` : ''}
     ${(def.compteurs || []).length ? `<h3>Compteurs</h3>${def.compteurs.map(k => `<div class="rangee edition-jauge">
       <span>${esc(k.nom)}</span><input type="number" inputmode="numeric" id="fe-c-${esc(k.id)}" value="${f.compteurs[k.id] ?? 0}"></div>`).join('')}` : ''}
@@ -890,9 +914,29 @@ async function appliquerDegats(mod, f) {
     `${abr(j1)} ${av1} → ${J(j1).act}${debord ? `, ${abr(j2)} ${av2} → ${J(j2).act}` : ''}`];
   const zero = debord && J(j2).act <= 0 ? def.jauges.find(x => x.id === j2)?.zero : null;
   if (zero) lignes.push(zero);
+  if (cfg.aZero && av1 > 0 && J(j1).act === 0) {
+    const z = cfg.aZero;
+    const jz = f.jauges[z.jauge];
+    if (jz) { const a = jz.act; jz.act = Math.max(0, Math.min(jz.max, jz.act + (z.mod || 0))); lignes.push(`${z.texte || ''}${z.texte ? ' ' : ''}(${def.jauges.find(x => x.id === z.jauge)?.abr || z.jauge} ${a} → ${jz.act})`); }
+  }
   await sauverPartie();
-  await noter({ type: 'fiche', texte: `${nomFiche(f, def)} subit ${n} dégât(s)${armure ? ` (armure ${armure})` : ''} : ${lignes[1]}${exact ? ' — à 0 exactement' : ''}${zero ? ' — ' + zero : ''}` });
+  await noter({ type: 'fiche', texte: `${nomFiche(f, def)} subit ${n} dégât(s)${armure ? ` (armure ${armure})` : ''} : ${lignes.slice(1).join(' ; ')}${exact ? ' — à 0 exactement' : ''}` });
   etat.dernier.degats = { fiche: f.id, lignes, exact, debord };
+  rendre();
+}
+
+async function soignerFiche(mod, f) {
+  const def = defFiche(mod, f.type);
+  const n = lireEntier($('#dg-n')?.value ?? '', 0, 999);
+  if (n == null) return toast('Entre un nombre de points');
+  const j1 = def.degats.cascade[0];
+  const j = f.jauges[j1];
+  const av = j.act;
+  j.act = Math.min(j.max, j.act + n);
+  const abr = def.jauges.find(x => x.id === j1)?.abr || j1;
+  await sauverPartie();
+  await noter({ type: 'fiche', texte: `${nomFiche(f, def)} récupère ${n} ${abr} : ${av} → ${j.act}` });
+  etat.dernier.degats = { fiche: f.id, lignes: [`+${n} ${abr}`, `${abr} ${av} → ${j.act}`], exact: false, debord: 0 };
   rendre();
 }
 
@@ -901,17 +945,25 @@ async function actionFiche(mod, f, i) {
   const a = def.actions[i];
   const parts = [];
   for (const ef of a.effets || []) {
+    if (ef.requis && (f.jauges[ef.jauge]?.act ?? 0) < (ef.retirer || 1)) {
+      return toast(ef.requis === true ? `Pas assez de ${def.jauges.find(x => x.id === ef.jauge)?.abr || ef.jauge}` : ef.requis);
+    }
+  }
+  if (a.confirmer && !confirm(a.confirmer)) return;
+  const ctx = contexteFiche(mod, f, def);
+  for (const ef of a.effets || []) {
     const j = f.jauges[ef.jauge];
     if (!j) continue;
     const av = j.act;
     if (ef.remplir) j.act = j.max;
+    if (ef.retirer) j.act = Math.max(0, j.act - ef.retirer);
     if (ef.ajouter) {
-      const r = calculerJet(lireFormule(ef.ajouter));
-      j.act = Math.min(j.max, j.act + r.total);
-      parts.push(`${formuleCourte(ef.ajouter)} = ${r.total}`);
+      const r = lancerExpression(ef.ajouter, ctx);
+      j.act = Math.max(0, Math.min(j.max, j.act + r.total));
+      if (r.des.length) parts.push(`${r.formule} : ${r.des.join(', ')}${r.cst ? ' ' + signe(r.cst) : ''} = ${r.total}`);
     }
     const jd = def.jauges.find(x => x.id === ef.jauge);
-    if (av !== j.act || ef.remplir) parts.push(`${jd?.abr || ef.jauge} ${av} → ${j.act}`);
+    if (av !== j.act || (ef.remplir && j.max)) parts.push(`${jd?.abr || ef.jauge} ${av} → ${j.act}`);
   }
   await sauverPartie();
   await noter({ type: 'fiche', texte: `${a.nom} — ${nomFiche(f, def)}${parts.length ? ' : ' + parts.join(', ') : ''}` });
@@ -958,19 +1010,24 @@ async function ajouterEtat(mod, f, nom) {
   rendre();
 }
 
-async function enregistrerEdition_fiche(mod, f) {
+async function enregistrerEdition_fiche(mod, f, resterEnEdition) {
   const def = defFiche(mod, f.type);
   f.role = $('#fe-role').value;
   for (const j of def.jauges || []) {
-    const act = Number($(`#fe-j-${CSS.escape(j.id)}-act`).value), max = Number($(`#fe-j-${CSS.escape(j.id)}-max`).value);
+    const act = Number($(`#fe-j-${CSS.escape(j.id)}-act`).value);
+    const max = j.maxFormule ? f.jauges[j.id]?.max ?? 0 : Number($(`#fe-j-${CSS.escape(j.id)}-max`).value);
     f.jauges[j.id] = { act: Number.isFinite(act) ? Math.round(act) : 0, max: Number.isFinite(max) ? Math.round(max) : 0 };
   }
+  lireEditionPlus(mod, f, def);
   for (const k of def.compteurs || []) {
     const v = Number($(`#fe-c-${CSS.escape(k.id)}`).value);
     f.compteurs[k.id] = Number.isFinite(v) ? Math.round(v) : 0;
   }
   for (const ch of champsDef(def)) f.champs[ch.id] = $(`#fe-ch-${CSS.escape(ch.id)}`).value.trim();
   if (f.role === 'principal') (etat.partie.fiches || []).forEach(x => { if (x !== f && x.role === 'principal') x.role = 'secondaire'; });
+  recalculerFiche(mod, f, def);
+  for (const j of def.jauges || []) if (f.jauges[j.id] && f.jauges[j.id].act > f.jauges[j.id].max && j.maxFormule) f.jauges[j.id].act = f.jauges[j.id].max;
+  if (resterEnEdition) return sauverPartie();
   etat.ficheEdition = false;
   await sauverPartie();
   rendre();
@@ -988,7 +1045,12 @@ async function actionJeu(a, b) {
       await sauverPartie(); return rendre();
     case 'jeu-sous': etat.jeuSous = b.dataset.v; return rendre();
     case 'jeu-memo': etat.ficheOuverte = null; etat.ficheEdition = false; etat.slotEdit = null; etat.jeuSous = 'memo'; await rendre(); return window.scrollTo(0, 0);
-    case 'jeu-ouvrir': etat.ficheOuverte = b.dataset.id; etat.ficheEdition = false; etat.slotEdit = null; await rendre(); return window.scrollTo(0, 0);
+    case 'jeu-ouvrir': {
+      etat.ficheOuverte = b.dataset.id; etat.ficheEdition = false; etat.slotEdit = null; etat.ajoutVoie = false;
+      const fo = ficheParId(b.dataset.id), dfo = defFiche(mod, fo?.type);
+      if (fo && dfo) { completerFiche(fo, dfo); if (recalculerFiche(mod, fo, dfo)) await sauverPartie(); }
+      await rendre(); return window.scrollTo(0, 0);
+    }
     case 'jeu-fermer': etat.ficheOuverte = null; etat.ficheEdition = false; etat.slotEdit = null; return rendre();
     case 'jeu-editer': etat.ficheEdition = true; await rendre(); return window.scrollTo(0, 0);
 
@@ -1036,8 +1098,9 @@ async function actionJeu(a, b) {
     }
     case 'cr-valider': {
       const p = pasCourant(mod, c);
-      validerEtape(mod, c, p);
+      if (validerEtape(mod, c, p) === false) { await sauverPartie(); return rendre(); }
       c.pas += 1; c.courant = null;
+      sauterEtapesInactives(mod, c);
       await sauverPartie(); await rendre();
       return document.querySelector('.creation')?.scrollIntoView({ block: 'start' });
     }
@@ -1046,6 +1109,7 @@ async function actionJeu(a, b) {
       if (p.type === 'saisie') validerEtape(mod, c, p);
       else c.resume.push(`${p.nom} : passé`);
       c.pas += 1; c.courant = null;
+      sauterEtapesInactives(mod, c);
       await sauverPartie(); return rendre();
     }
     case 'cr-terminer': return terminerCreation();
@@ -1078,6 +1142,7 @@ async function actionJeu(a, b) {
     case 'jr': return jetRapide(mod, f, Number(b.dataset.i));
     case 'act': return actionFiche(mod, f, Number(b.dataset.i));
     case 'dg': return appliquerDegats(mod, f);
+    case 'dg-soin': return soignerFiche(mod, f);
     case 'fiche-table': return lancerTableJeu(mod, b.dataset.t, null, 'fiche:' + f.id);
     case 'ajout-etat': return ajouterEtat(mod, f, b.dataset.n);
     case 'slot': etat.slotEdit = { g: b.dataset.g, i: Number(b.dataset.i) }; await rendre(); return $('#sl-texte')?.focus();
@@ -1115,5 +1180,6 @@ async function actionJeu(a, b) {
       return lancerTableJeu(mod, t.id, v, 'tables');
     }
     case 'gen': return lancerGenerateur(mod, b.dataset.id);
+    default: return actionJeuPlus(a, b, mod, f, c);
   }
 }
