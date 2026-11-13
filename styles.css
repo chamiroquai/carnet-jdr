@@ -306,3 +306,8 @@ details.groupe-tables[open] > summary { margin-bottom: 8px; }
 .liste-table li { display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--bord); }
 .liste-table li:last-child { border-bottom: 0; }
 .liste-table .n { flex: 0 0 42px; color: var(--accent); font-weight: 650; font-size: .85rem; }
+
+details.memo > summary { cursor: pointer; }
+details.memo[open] > summary { margin-bottom: 6px; }
+details.memo ul { margin: 6px 0 0; padding-left: 18px; }
+details.memo li { margin: 6px 0; line-height: 1.45; }

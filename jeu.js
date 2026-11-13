@@ -64,6 +64,7 @@ function validerModule(d) {
       if (p.table && !String(p.table).includes('{') && !ids.has(p.table)) avert.push(`Création « ${def.nom || type} » / ${p.nom} : table « ${p.table} » introuvable.`);
     }
   }
+  if (d.memo != null && (!Array.isArray(d.memo) || d.memo.some(x => !x || !x.titre || !Array.isArray(x.points)))) avert.push('Section « memo » mal formée (attendu : liste de { titre, points }).');
   for (const g of d.generateurs || []) for (const id of g.tables || []) if (!ids.has(id)) avert.push(`Générateur « ${g.nom} » : table « ${id} » introuvable.`);
   return { erreurs, avert };
 }
@@ -401,9 +402,25 @@ async function vueJeu() {
   }
   if (etat.ficheOuverte && ficheParId(etat.ficheOuverte)) return vueFiche(mod, ficheParId(etat.ficheOuverte));
   const sous = etat.jeuSous || 'fiches';
-  const puces = `<div class="puces sous-onglets">${[['fiches', 'Fiches'], ['tables', 'Tables']].map(([k, l]) =>
+  const puces = `<div class="puces sous-onglets">${[['fiches', 'Fiches'], ['tables', 'Tables'], ['memo', 'Mémo']].map(([k, l]) =>
     `<button class="puce ${sous === k ? 'choisie' : ''}" data-action="jeu-sous" data-v="${k}">${l}</button>`).join('')}</div>`;
-  return puces + (sous === 'tables' ? vueTables(mod) : vueListeFiches(mod));
+  return puces + (sous === 'tables' ? vueTables(mod) : sous === 'memo' ? vueMemo(mod) : vueListeFiches(mod));
+}
+
+/* ---------- Rendu : mémo des règles (section « memo » du module) ---------- */
+function enrichir(t) { return esc(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>'); }
+function vueMemo(mod) {
+  const sections = Array.isArray(mod.memo) ? mod.memo : [];
+  if (!sections.length) {
+    return `<div class="carte"><h2>Mémo des règles</h2>
+      <p class="discret">Ce module ne contient pas de mémo (section « memo » du fichier).</p>
+      ${mod.test?.aide ? `<p>${enrichir(mod.test.aide)}</p>` : ''}</div>`;
+  }
+  return sections.map((sec, i) => `<details class="carte memo" data-garde="memo-${i}" ${i === 0 ? 'open' : ''}>
+    <summary><strong>${esc(sec.titre)}</strong></summary>
+    ${sec.intro ? `<p class="discret petit">${enrichir(sec.intro)}</p>` : ''}
+    <ul>${(sec.points || []).map(x => `<li>${enrichir(x)}</li>`).join('')}</ul>
+  </details>`).join('');
 }
 
 function resumeJauges(f, def) {
@@ -587,6 +604,7 @@ function vueFiche(mod, f) {
   const deg = etat.dernier.degats?.fiche === f.id ? etat.dernier.degats : null;
   let html = `<div class="rangee entete-fiche">
       <button class="lien" data-action="jeu-fermer">‹ Fiches</button>
+      <button class="lien" style="text-align:center" data-action="jeu-memo">Mémo</button>
       <button class="lien" style="text-align:right" data-action="jeu-editer">Modifier</button>
     </div>
     <div class="carte">
@@ -969,6 +987,7 @@ async function actionJeu(a, b) {
       if (!etat.partie.jeu) etat.partie.jeu = etat.contenus.find(x => x.id === b.dataset.id)?.donnees.nom || '';
       await sauverPartie(); return rendre();
     case 'jeu-sous': etat.jeuSous = b.dataset.v; return rendre();
+    case 'jeu-memo': etat.ficheOuverte = null; etat.ficheEdition = false; etat.slotEdit = null; etat.jeuSous = 'memo'; await rendre(); return window.scrollTo(0, 0);
     case 'jeu-ouvrir': etat.ficheOuverte = b.dataset.id; etat.ficheEdition = false; etat.slotEdit = null; await rendre(); return window.scrollTo(0, 0);
     case 'jeu-fermer': etat.ficheOuverte = null; etat.ficheEdition = false; etat.slotEdit = null; return rendre();
     case 'jeu-editer': etat.ficheEdition = true; await rendre(); return window.scrollTo(0, 0);
