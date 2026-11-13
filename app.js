@@ -3,7 +3,7 @@
    sont importés par l'utilisateur et restent stockés sur l'appareil. */
 'use strict';
 
-const VERSION_APP = '1.2.1';
+const VERSION_APP = '1.2.2';
 const FORMAT_ORACLE = 'carnet-jdr-oracle';
 const FORMAT_SAUVEGARDE = 'carnet-jdr-sauvegarde';
 const FACES = [4, 6, 8, 10, 12, 20, 100];
@@ -1332,7 +1332,9 @@ document.addEventListener('click', async e => {
 
   if ('serviceWorker' in navigator) {
     try {
-      const reg = await navigator.serviceWorker.register('sw.js');
+      const reg = await navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' });
+      // Sur iPhone, l'appli de l'écran d'accueil reprend sans se recharger : on revérifie à chaque retour.
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
       const proposer = w => {
         const band = $('#bandeau');
         band.innerHTML = '<span>Nouvelle version disponible.</span><button data-maj>Mettre à jour</button>';
