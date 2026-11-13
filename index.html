@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#16181d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Carnet JDR">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Carnet JDR</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="entete">
+    <h1 id="titre-vue">Oracle</h1>
+  </header>
+
+  <div id="bandeau" class="bandeau" hidden></div>
+
+  <main id="vue" class="vue" aria-live="polite"></main>
+
+  <nav class="onglets" aria-label="Navigation">
+    <button data-vue="ouinon" class="actif"><span class="ico">?</span><span>Oui/Non</span></button>
+    <button data-vue="mots"><span class="ico">Aa</span><span>Mots</span></button>
+    <button data-vue="evenements"><span class="ico">✦</span><span>Événements</span></button>
+    <button data-vue="historique"><span class="ico">≡</span><span>Historique</span></button>
+    <button data-vue="reglages"><span class="ico">⚙</span><span>Réglages</span></button>
+  </nav>
+
+  <input type="file" id="fichier-import" hidden>
+  <input type="file" id="fichier-restauration" hidden>
+
+  <script src="app.js"></script>
+</body>
+</html>
