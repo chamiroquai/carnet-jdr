@@ -1,9 +1,9 @@
-/* Carnet JDR — moteur (étape 2 : dés, parties, journal et exports).
+/* Carnet JDR — moteur (étapes 1 à 3 : oracle, dés, parties, journal, exports ; modules de jeu dans jeu.js).
    Ce fichier ne contient aucun contenu de jeu : tables, mots et cartes
    sont importés par l'utilisateur et restent stockés sur l'appareil. */
 'use strict';
 
-const VERSION_APP = '1.1.0';
+const VERSION_APP = '1.2.0';
 const FORMAT_ORACLE = 'carnet-jdr-oracle';
 const FORMAT_SAUVEGARDE = 'carnet-jdr-sauvegarde';
 const FACES = [4, 6, 8, 10, 12, 20, 100];
@@ -206,6 +206,9 @@ function validerOracle(d) {
 }
 
 function resumeContenu(d) {
+  if (d.format === FORMAT_MODULE) {
+    return `module de jeu : ${Object.values(d.fiches || {}).map(f => f.nom).join(', ')} · ${(d.tables || []).length} tables`;
+  }
   const parts = [];
   if (d.ouiNon) parts.push(`oui/non (${d.ouiNon.probabilites.length} probabilités)`);
   if (d.mots) parts.push(`${d.mots.listes.length} listes de mots`);
@@ -234,6 +237,7 @@ async function importerOracle() {
   let d;
   try { d = await lireFichier($('#fichier-import')); } catch (e) { alert(e.message); return; }
   if (d && d.format === FORMAT_SAUVEGARDE) { alert('Ce fichier est une sauvegarde. Utilise « Restaurer une sauvegarde ».'); return; }
+  if (d && d.format === FORMAT_MODULE) return importerModule(d);
   const { erreurs, avert } = validerOracle(d);
   if (erreurs.length) { alert('Import refusé :\n\n• ' + erreurs.join('\n• ')); return; }
   if (avert.length && !confirm('Points à vérifier :\n\n• ' + avert.join('\n• ') + '\n\nImporter quand même ?')) return;
@@ -251,6 +255,24 @@ async function importerOracle() {
   }
   await signalerChangement();
   toast(`« ${d.nom} » importé`);
+  rendre();
+}
+
+async function importerModule(d) {
+  const { erreurs, avert } = validerModule(d);
+  if (erreurs.length) { alert('Import refusé :\n\n• ' + erreurs.join('\n• ')); return; }
+  if (avert.length && !confirm('Points à vérifier :\n\n• ' + avert.slice(0, 12).join('\n• ') + (avert.length > 12 ? `\n… et ${avert.length - 12} autre(s)` : '') + '\n\nImporter quand même ?')) return;
+  const existe = etat.contenus.find(c => c.id === d.id);
+  if (existe && !confirm(`« ${d.nom} » est déjà importé. Le remplacer par ce fichier ?\n\nLes fiches de tes parties sont conservées.`)) return;
+  await DB.mettre('contenus', { id: d.id, importeLe: existe ? existe.importeLe : maintenant(), majLe: maintenant(), donnees: d });
+  await chargerContenus();
+  if (etat.partie && !etat.partie.module && confirm(`Lier « ${d.nom} » à la partie ouverte « ${etat.partie.nom} » ?`)) {
+    etat.partie.module = d.id;
+    if (!etat.partie.jeu) etat.partie.jeu = d.nom;
+    await DB.mettre('parties', etat.partie);
+  }
+  await signalerChangement();
+  toast(`Module « ${d.nom} » importé`);
   rendre();
 }
 
@@ -336,7 +358,7 @@ async function verifierRappel() {
 }
 
 /* ---------- Vues ---------- */
-const TITRES = { ouinon: 'Oracle oui/non', mots: 'Mots clés', evenements: 'Événements', des: 'Dés', journal: 'Journal', parties: 'Parties', reglages: 'Réglages' };
+const TITRES = { ouinon: 'Oracle oui/non', mots: 'Mots clés', evenements: 'Événements', des: 'Dés', jeu: 'Jeu', journal: 'Journal', parties: 'Parties', reglages: 'Réglages' };
 
 function sansOracle(section) {
   return `<div class="carte vide">
@@ -737,23 +759,28 @@ function texteEntree(h) {
     case 'tourment': return `Déplacement — Tourment ${h.ligne}, d${h.de ?? 6} = ${h.valeur} → ${h.nb} carte(s)${h.physique ? ', dé physique' : ''}${h.cartes.length ? ' : ' + h.cartes.map(c => c.titre).join(', ') : ''}`;
     case 'carte': return `Carte${h.ajout ? ' ajoutée' : ''} : ${h.cartes.map(c => `${c.titre} (${c.deck})`).join(', ')}`;
     case 'jet': return `${h.libelle ? h.libelle + ' — ' : ''}${detailJet(h)}${h.reussite != null ? ` (${h.comp === '<=' ? '≤' : '≥'} ${h.seuil} : ${h.reussite ? 'réussite' : 'échec'})` : ''}${h.physique ? ', dés physiques' : ''}`;
+    case 'table': return `${h.libelle ? h.libelle + ' — ' : ''}${(h.resultats || []).map(r => `${r.table} (${r.de} = ${r.valeur}) → ${r.texte}`).join(' ; ')}${h.physique ? ', dés physiques' : ''}`;
+    case 'fiche': return h.texte;
     case 'derogation': return `Dérogation — ${h.texte}`;
     case 'texte': return h.texte;
     default: return h.texte || JSON.stringify(h);
   }
 }
-const ICONES = { ouinon: '?', mots: 'Aa', tourment: '✦', carte: '✦', jet: '⚄', derogation: '↺' };
+const ICONES = { ouinon: '?', mots: 'Aa', tourment: '✦', carte: '✦', jet: '⚄', table: '▤', fiche: '◈', derogation: '↺' };
 
 /* Texte des cartes (pour les exports) */
 function cartesDetail(h) {
-  return (h.cartes || []).filter(c => c.texte).map(c => `${c.titre} : ${c.texte}`);
+  const l = (h.cartes || []).filter(c => c.texte).map(c => `${c.titre} : ${c.texte}`);
+  if (h.type === 'table') l.push(...(h.resultats || []).filter(r => r.detail).map(r => `${r.texte} : ${r.detail}`));
+  if (Array.isArray(h.details)) l.push(...h.details.map(x => x.trim()));
+  return l;
 }
 
 /* ---------- Parties ---------- */
-async function creerPartie(nom, jeu, decks) {
+async function creerPartie(nom, jeu, decks, module) {
   const tr = etat.oracle?.donnees.tourments;
   const p = {
-    id: nouvelId(), nom, jeu: jeu || '', module: null,
+    id: nouvelId(), nom, jeu: jeu || '', module: module || null, fiches: [],
     creeLe: maintenant(), majLe: maintenant(),
     seance: 1, seances: [{ numero: 1, debut: maintenant() }],
     decksActifs: decks, tourment: { ligne: tr?.depart || 1, sens: 1 },
@@ -772,6 +799,7 @@ async function activerPartie(id) {
   await kv.set('partieActive', id);
   await chargerParties();
   etat.dernier = {}; etat.edition = null; etat.menu = null;
+  etat.ficheOuverte = null; etat.ficheEdition = false; etat.slotEdit = null; etat.nouvelleFiche = null; etat.tableOuverte = null;
   etat.brouillon = await kv.get('brouillon:' + (id ?? 'hors'), '');
   etat.brouillonNote = false;
 }
@@ -822,9 +850,11 @@ async function vueParties() {
     <h2>${f.id ? 'Modifier la partie' : 'Nouvelle partie'}</h2>
     <h3>Nom</h3>
     <input type="text" id="p-nom" value="${esc(f.nom)}" placeholder="Ex. : La dette du Nébuleuse">
+    <h3>Module de jeu</h3>
+    <select id="p-module"><option value="">Aucun (jeu libre)</option>${modulesImportes().map(m => `<option value="${esc(m.id)}" ${f.module === m.id ? 'selected' : ''}>${esc(m.donnees.nom)}</option>`).join('')}</select>
+    <p class="discret petit">${modulesImportes().length ? 'Le module donne les fiches, la création de personnage et les tables (onglet Jeu).' : 'Aucun module importé : tu pourras en lier un plus tard depuis l’onglet Jeu.'}</p>
     <h3>Jeu (facultatif)</h3>
     <input type="text" id="p-jeu" value="${esc(f.jeu)}" placeholder="Ex. : le nom du système joué">
-    <p class="discret petit">Les modules de jeu (fiche, création de personnage) arriveront aux étapes 3 et 4.</p>
     ${!f.id && decks.length ? `<h3>Decks d'événements</h3>
       ${decks.map(d => `<label class="case"><input type="checkbox" class="p-deck" value="${esc(d.cle)}" ${choixGlobal === null || choixGlobal.includes(d.cle) ? 'checked' : ''}> ${esc(d.nom)}</label>`).join('')}
       <p class="discret petit">Modifiable ensuite dans l'onglet Événements.</p>` : ''}
@@ -838,7 +868,7 @@ async function vueParties() {
     <div class="discret petit">${p.jeu ? esc(p.jeu) + ' · ' : ''}${p.seances.length} séance(s) · ${compte(p.id)} entrée(s) · ${esc(dateFr(p.majLe))}</div>
     <div class="rangee" style="margin-top:8px">
       ${etat.partie?.id === p.id ? '<button data-action="p-journal">Journal</button>' : `<button data-action="p-ouvrir" data-id="${esc(p.id)}">Ouvrir</button>`}
-      <button class="lien" data-action="p-modifier" data-id="${esc(p.id)}">Renommer</button>
+      <button class="lien" data-action="p-modifier" data-id="${esc(p.id)}">Modifier</button>
       <button class="lien danger" data-action="p-suppr" data-id="${esc(p.id)}">Supprimer</button>
     </div>
   </div>`).join('')}
@@ -1067,7 +1097,7 @@ async function vueReglages() {
         <button class="lien danger" data-action="suppr-contenu" data-id="${esc(c.id)}">Retirer</button>
       </div>
     </div>`).join('') : '<p class="discret">Aucun fichier importé.</p>'}
-    <div style="margin-top:12px"><button class="principal" data-action="importer">Importer un fichier d'oracle</button></div>
+    <div style="margin-top:12px"><button class="principal" data-action="importer">Importer un fichier (oracle ou module)</button></div>
   </div>
 
   <div class="carte">
@@ -1093,7 +1123,7 @@ async function vueReglages() {
 
 /* ---------- Rendu et événements ---------- */
 async function rendre() {
-  const vues = { ouinon: vueOuiNon, mots: vueMots, evenements: vueEvenements, des: vueDes, journal: vueJournal, parties: vueParties, reglages: vueReglages };
+  const vues = { ouinon: vueOuiNon, mots: vueMots, evenements: vueEvenements, des: vueDes, jeu: vueJeu, journal: vueJournal, parties: vueParties, reglages: vueReglages };
   $('#titre-vue').textContent = TITRES[etat.vue];
   const bp = $('#btn-partie');
   bp.textContent = etat.partie ? etat.partie.nom : 'Hors partie';
@@ -1220,24 +1250,26 @@ document.addEventListener('click', async e => {
       }
 
       /* Parties */
-      case 'p-nouvelle': etat.formPartie = { nom: '', jeu: '' }; return rendre();
-      case 'p-modifier': { const p = etat.parties.find(x => x.id === b.dataset.id); etat.formPartie = { id: p.id, nom: p.nom, jeu: p.jeu }; window.scrollTo(0, 0); return rendre(); }
+      case 'p-nouvelle': etat.formPartie = { nom: '', jeu: '', module: modulesImportes().length === 1 ? modulesImportes()[0].id : '' }; return rendre();
+      case 'p-modifier': { const p = etat.parties.find(x => x.id === b.dataset.id); etat.formPartie = { id: p.id, nom: p.nom, jeu: p.jeu, module: p.module || '' }; window.scrollTo(0, 0); return rendre(); }
       case 'p-annuler': etat.formPartie = null; return rendre();
       case 'p-valider': {
         const nom = $('#p-nom').value.trim();
         if (!nom) return toast('Donne un nom à la partie');
-        const jeu = $('#p-jeu').value.trim();
+        const module = $('#p-module')?.value || null;
+        const jeu = $('#p-jeu').value.trim() || (module ? etat.contenus.find(c => c.id === module)?.donnees.nom || '' : '');
         const f = etat.formPartie;
         etat.formPartie = null;
         if (f.id) {
           const p = etat.parties.find(x => x.id === f.id);
-          p.nom = nom; p.jeu = jeu; p.majLe = maintenant();
+          p.nom = nom; p.jeu = jeu; p.module = module; p.majLe = maintenant();
+          if (etat.partie?.id === p.id) etat.partie = p;
           await DB.mettre('parties', p); await chargerParties(); await signalerChangement();
           return rendre();
         }
         const cases = [...document.querySelectorAll('.p-deck')];
         const decks = cases.length ? cases.filter(x => x.checked).map(x => x.value) : await kv.get('decksActifs', null);
-        await creerPartie(nom, jeu, decks);
+        await creerPartie(nom, jeu, decks, module);
         etat.brouillon = '';
         toast(`Partie « ${nom} » ouverte`);
         return allerA('journal');
@@ -1267,7 +1299,8 @@ document.addEventListener('click', async e => {
       case 'activer': await kv.set('oracleActif', b.dataset.id); await chargerContenus(); etat.dernier = {}; return rendre();
       case 'suppr-contenu': {
         const c = etat.contenus.find(x => x.id === b.dataset.id);
-        if (!confirm(`Retirer « ${c.donnees.nom} » de cet appareil ? (Ton fichier dans iCloud Drive n'est pas touché.)`)) return;
+        const liees = etat.parties.filter(p => p.module === c.id).length;
+        if (!confirm(`Retirer « ${c.donnees.nom} » de cet appareil ? (Ton fichier dans iCloud Drive n'est pas touché.)${liees ? `\n\n${liees} partie(s) l'utilisent : leurs fiches sont conservées, mais restent inaccessibles jusqu'à ce que tu réimportes le module.` : ''}`)) return;
         await DB.suppr('contenus', c.id);
         await chargerContenus(); etat.dernier = {};
         return rendre();
@@ -1279,6 +1312,8 @@ document.addEventListener('click', async e => {
         etat.dernier = {}; etat.des = null; etat.brouillon = '';
         await verifierRappel();
         return rendre();
+      default:
+        return actionJeu(a, b);
     }
   } catch (err) {
     console.error(err);
