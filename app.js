@@ -3,7 +3,7 @@
    sont importés par l'utilisateur et restent stockés sur l'appareil. */
 'use strict';
 
-const VERSION_APP = '1.4.1';
+const VERSION_APP = '1.5.0';
 const FORMAT_ORACLE = 'carnet-jdr-oracle';
 const FORMAT_SAUVEGARDE = 'carnet-jdr-sauvegarde';
 const FACES = [4, 6, 8, 10, 12, 20, 100];

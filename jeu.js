@@ -67,6 +67,7 @@ function validerModule(d) {
   if (d.memo != null && (!Array.isArray(d.memo) || d.memo.some(x => !x || !x.titre || !Array.isArray(x.points)))) avert.push('Section « memo » mal formée (attendu : liste de { titre, points }).');
   for (const g of d.generateurs || []) for (const id of g.tables || []) if (!ids.has(id)) avert.push(`Générateur « ${g.nom} » : table « ${id} » introuvable.`);
   if (typeof validerModulePlus === 'function') validerModulePlus(d, erreurs, avert);
+  if (typeof validerRencontres === 'function') validerRencontres(d, erreurs, avert);
   return { erreurs, avert };
 }
 function minFormule(f) { return (f.garde !== 'tous' ? f.k : f.n) + (f.mod || 0); }
@@ -423,10 +424,11 @@ async function vueJeu() {
   const avecRegles = typeof vueRegles === 'function' && (mod.regles || mod.test?.mode === 'bonus');
   const sous = etat.jeuSous === 'regles' && !avecRegles ? 'fiches' : etat.jeuSous || 'fiches';
   const cb = p.combat;
-  const puces = `<div class="puces sous-onglets">${[['fiches', 'Fiches'], ...(avecRegles ? [['regles', cb?.phase === 'jeu' ? '⚔ Règles' : 'Règles']] : []), ['tables', 'Tables'], ['memo', 'Mémo']].map(([k, l]) =>
+  const avecRencontres = typeof vueRencontres === 'function';
+  const puces = `<div class="puces sous-onglets">${[['fiches', 'Fiches'], ...(avecRegles ? [['regles', cb?.phase === 'jeu' ? '⚔ Règles' : 'Règles']] : []), ...(avecRencontres ? [['rencontres', 'Rencontres']] : []), ['tables', 'Tables'], ['memo', 'Mémo']].map(([k, l]) =>
     `<button class="puce ${sous === k ? 'choisie' : ''}" data-action="jeu-sous" data-v="${k}">${l}</button>`).join('')}</div>`;
   const bandeau = cb?.phase === 'jeu' && sous !== 'regles' ? `<button class="bandeau-combat" data-action="rg-ouvrir">⚔ Combat en cours · round ${cb.round} — reprendre</button>` : '';
-  return puces + bandeau + (sous === 'tables' ? vueTables(mod) : sous === 'memo' ? vueMemo(mod) : sous === 'regles' ? vueRegles(mod) : vueListeFiches(mod));
+  return puces + bandeau + (sous === 'tables' ? vueTables(mod) : sous === 'memo' ? vueMemo(mod) : sous === 'regles' ? vueRegles(mod) : sous === 'rencontres' && avecRencontres ? vueRencontres(mod) : vueListeFiches(mod));
 }
 
 /* ---------- Rendu : mémo des règles (section « memo » du module) ---------- */

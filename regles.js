@@ -523,6 +523,9 @@ function vueFormAdversaire(mod, cb, C) {
   return `<div class="carte" id="form-adv"><h2>Fiche rapide d'adversaire</h2>
     ${best.length ? `<details class="de-physique" data-garde="rg-best"><summary>Reprendre un adversaire déjà rencontré (${best.length})</summary>
       <div class="pile">${best.map((b, i) => `<div class="rangee serree favori"><button data-action="rg-c-best" data-i="${i}">${esc(b.nom)}<small class="discret"> DEF ${b.def} · PV ${b.pv}</small></button><button class="lien danger" data-action="rg-c-best-suppr" data-i="${i}" aria-label="Oublier">✕</button></div>`).join('')}</div></details>` : ''}
+    ${typeof bestiaireModule === 'function' && bestiaireModule(mod).length ? `<details class="de-physique" data-garde="rg-best-livre"><summary>Prendre un profil du bestiaire du livre (${bestiaireModule(mod).length})</summary>
+      <select id="rg-bmod"><option value="">— choisir —</option>${[...new Set(bestiaireModule(mod).map(c => c.groupe || 'Bestiaire'))].map(g => `<optgroup label="${esc(g)}">${bestiaireModule(mod).filter(c => (c.groupe || 'Bestiaire') === g).map(c => `<option value="${esc(c.id)}">${esc(c.nom)}${c.niveau != null && c.niveau !== '' ? ' (' + esc(c.niveau) + ')' : ''}</option>`).join('')}</optgroup>`).join('')}</select>
+      <button style="margin-top:6px" data-action="rg-c-bmod">Remplir la fiche avec ce profil</button></details>` : ''}
     <div class="rangee"><input type="text" id="ra-nom" placeholder="Nom (ex. Gobelin)" value="${esc(fa.nom || '')}" style="flex:2"><input type="number" inputmode="numeric" id="ra-nb" placeholder="Nombre" value="${esc(fa.nb || '')}" title="Nombre d'exemplaires"></div>
     <div class="grille-edition">
       <label><span>${esc(A.niveau || 'Niveau')}</span><input type="text" id="ra-niv" value="${esc(fa.niveau ?? '')}"></label>
@@ -534,7 +537,7 @@ function vueFormAdversaire(mod, cb, C) {
     <h3>Attaques <small class="discret">(une par ligne)</small></h3>
     <textarea id="ra-att" rows="2" placeholder="${esc(A.exemple || 'Épée longue +4 DM 1d8+2')}">${esc(fa.attaques || '')}</textarea>
     <textarea id="ra-notes" rows="2" placeholder="Capacités, notes (page du livre…)">${esc(fa.notes || '')}</textarea>
-    <label class="case petit"><input type="checkbox" id="ra-garder" checked> Garder dans les adversaires de la partie</label>
+    <label class="case petit"><input type="checkbox" id="ra-garder" ${fa.garder === false ? "" : "checked"}> Garder dans les adversaires de la partie</label>
     <button data-action="rg-c-adv-ok">Ajouter au combat</button>
     ${A.aide ? `<p class="discret petit">${enrichir(A.aide)}</p>` : ''}
   </div>`;
@@ -1055,6 +1058,13 @@ async function actionRegles(a, b, mod, f) {
     case 'rg-c-best': {
       const m = etat.partie.bestiaire[Number(b.dataset.i)];
       etat.formAdv = { ...m, nb: '' }; await rendre();
+      return document.getElementById('form-adv')?.scrollIntoView({ block: 'start' });
+    }
+    case 'rg-c-bmod': {
+      const c = bestiaireModule(mod).find(x => x.id === $('#rg-bmod')?.value);
+      if (!c) return toast('Choisis une créature');
+      const m = modeleAdversaire(c);
+      etat.formAdv = { ...m, nb: '', garder: false }; await rendre();
       return document.getElementById('form-adv')?.scrollIntoView({ block: 'start' });
     }
     case 'rg-c-best-suppr': {

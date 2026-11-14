@@ -781,5 +781,6 @@ async function actionJeuPlus(a, b, mod, f, c) {
     }
     default:
       if (a.startsWith('rg-') && typeof actionRegles === 'function') return actionRegles(a, b, mod, f);
+      if ((a.startsWith('rc-') || a.startsWith('rt-')) && typeof actionRencontres === 'function') return actionRencontres(a, b, mod);
   }
 }
