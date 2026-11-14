@@ -3,7 +3,7 @@
    sont importés par l'utilisateur et restent stockés sur l'appareil. */
 'use strict';
 
-const VERSION_APP = '1.4.0';
+const VERSION_APP = '1.4.1';
 const FORMAT_ORACLE = 'carnet-jdr-oracle';
 const FORMAT_SAUVEGARDE = 'carnet-jdr-sauvegarde';
 const FACES = [4, 6, 8, 10, 12, 20, 100];
@@ -340,6 +340,13 @@ async function restaurerSauvegarde() {
 /* ---------- Rappel de sauvegarde ---------- */
 async function verifierRappel() {
   const band = $('#bandeau');
+  // Une mise à jour en attente passe avant le rappel de sauvegarde
+  if (etat.majEnAttente) {
+    band.innerHTML = '<span>Nouvelle version disponible.</span><button data-maj>Mettre à jour</button>';
+    band.querySelector('[data-maj]').onclick = () => etat.majEnAttente.postMessage('activer');
+    band.hidden = false;
+    return;
+  }
   const jours = await kv.get('rappelJours', 7);
   const derniere = await kv.get('derniereSauvegarde', null);
   let dernierChangement = await kv.get('dernierChangement', null);
@@ -1122,6 +1129,7 @@ async function vueReglages() {
     <h2>À propos</h2>
     <p class="discret petit">Carnet JDR ${VERSION_APP} · données stockées uniquement sur cet appareil${persistant === true ? ' (stockage persistant accordé)' : persistant === false ? ' (stockage non persistant : pense aux sauvegardes)' : ''}.</p>
     <p class="discret petit">Sur iPhone et iPad, l'appli de l'écran d'accueil a son propre stockage, distinct de Safari : importe tes fichiers depuis l'appli installée.</p>
+    <button data-action="chercher-maj">Rechercher une mise à jour</button>
     <button class="lien danger" data-action="tout-effacer">Effacer toutes les données de cet appareil</button>
   </div>`;
 }
@@ -1310,6 +1318,20 @@ document.addEventListener('click', async e => {
         await chargerContenus(); etat.dernier = {};
         return rendre();
       }
+      case 'chercher-maj': {
+        const reg = etat.swReg;
+        if (!reg) return toast('Mise à jour impossible ici (mode hors service worker)');
+        toast('Recherche…');
+        try { await reg.update(); } catch { return toast('Pas de connexion : réessaie plus tard'); }
+        await new Promise(r => setTimeout(r, 1500));
+        const w = reg.waiting || reg.installing;
+        if (w && navigator.serviceWorker.controller) {
+          if (w.state === 'installed') { etat.majEnAttente = w; await verifierRappel(); return toast('Nouvelle version prête : touche « Mettre à jour » en haut'); }
+          w.addEventListener('statechange', () => { if (w.state === 'installed') { etat.majEnAttente = w; verifierRappel(); } });
+          return toast('Téléchargement de la nouvelle version…');
+        }
+        return toast(`Carnet JDR ${VERSION_APP} est à jour`);
+      }
       case 'tout-effacer':
         if (!confirm('Effacer toutes les données de cet appareil (contenus, parties, journal, réglages) ?')) return;
         for (const s of ['contenus', 'kv', 'historique', 'parties']) await DB.vider(s);
@@ -1340,12 +1362,8 @@ document.addEventListener('click', async e => {
       const reg = await navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' });
       // Sur iPhone, l'appli de l'écran d'accueil reprend sans se recharger : on revérifie à chaque retour.
       document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
-      const proposer = w => {
-        const band = $('#bandeau');
-        band.innerHTML = '<span>Nouvelle version disponible.</span><button data-maj>Mettre à jour</button>';
-        band.hidden = false;
-        band.querySelector('[data-maj]').onclick = () => w.postMessage('activer');
-      };
+      const proposer = w => { etat.majEnAttente = w; verifierRappel(); };
+      etat.swReg = reg;
       if (reg.waiting && navigator.serviceWorker.controller) proposer(reg.waiting);
       reg.addEventListener('updatefound', () => {
         const w = reg.installing;
