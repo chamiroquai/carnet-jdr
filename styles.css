@@ -344,3 +344,26 @@ ol.caps li.acquise .n { background: var(--accent); color: var(--accent-texte); b
 .grille-edition label { display: flex; flex-direction: column; gap: 2px; font-size: .85rem; }
 .grille-edition input { text-align: center; }
 .edition-arme { border-top: 1px solid var(--bord); padding: 8px 0; display: grid; gap: 6px; }
+
+/* ---------- Assistant de règles (étape 5) ---------- */
+.etapes-assist { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; font-size: .75rem; color: var(--texte-2); }
+.etapes-assist span { padding: 3px 8px; border-radius: 999px; background: var(--surface-2); }
+.etapes-assist .courante { background: var(--accent); color: var(--accent-texte); font-weight: 600; }
+.etapes-assist .faite { opacity: .6; }
+.bandeau-combat { width: 100%; margin-bottom: 12px; border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.tour-courant { border-color: var(--accent); }
+.etiquette.etat { background: var(--non); color: #fff; }
+.ordre { list-style: none; margin: 0; padding: 0; }
+.ordre li + li { margin-top: 6px; }
+.ligne-part { width: 100%; display: grid; grid-template-columns: 2.2em 1fr auto; grid-template-rows: auto auto; gap: 0 8px; align-items: center; text-align: left; padding: 8px 10px; }
+.ligne-part .n { grid-row: span 2; font-weight: 700; font-size: 1.1rem; text-align: center; color: var(--texte-2); }
+.ligne-part .nom { font-weight: 600; }
+.ligne-part .pv { font-variant-numeric: tabular-nums; font-weight: 600; }
+.ligne-part .def { grid-column: 2 / 4; }
+.ordre li.courant .ligne-part { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.ordre li.courant .n { color: var(--accent); }
+.ordre li.adv .nom { color: var(--non); }
+.ordre li.hors .ligne-part { opacity: .45; text-decoration: line-through; }
+.detail-part { padding: 8px 4px 4px; }
+.detail-part h3 { margin: 10px 0 6px; }
+.liste-simple li > label.case { display: inline-flex; padding: 2px 0; }

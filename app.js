@@ -3,7 +3,7 @@
    sont importés par l'utilisateur et restent stockés sur l'appareil. */
 'use strict';
 
-const VERSION_APP = '1.3.0';
+const VERSION_APP = '1.4.0';
 const FORMAT_ORACLE = 'carnet-jdr-oracle';
 const FORMAT_SAUVEGARDE = 'carnet-jdr-sauvegarde';
 const FACES = [4, 6, 8, 10, 12, 20, 100];
@@ -238,6 +238,7 @@ async function importerOracle() {
   try { d = await lireFichier($('#fichier-import')); } catch (e) { alert(e.message); return; }
   if (d && d.format === FORMAT_SAUVEGARDE) { alert('Ce fichier est une sauvegarde. Utilise « Restaurer une sauvegarde ».'); return; }
   if (d && d.format === FORMAT_MODULE) return importerModule(d);
+  if (d && d.format === FORMAT_COMPLEMENT) return importerComplement(d);
   const { erreurs, avert } = validerOracle(d);
   if (erreurs.length) { alert('Import refusé :\n\n• ' + erreurs.join('\n• ')); return; }
   if (avert.length && !confirm('Points à vérifier :\n\n• ' + avert.join('\n• ') + '\n\nImporter quand même ?')) return;
@@ -264,6 +265,8 @@ async function importerModule(d) {
   if (avert.length && !confirm('Points à vérifier :\n\n• ' + avert.slice(0, 12).join('\n• ') + (avert.length > 12 ? `\n… et ${avert.length - 12} autre(s)` : '') + '\n\nImporter quand même ?')) return;
   const existe = etat.contenus.find(c => c.id === d.id);
   if (existe && !confirm(`« ${d.nom} » est déjà importé. Le remplacer par ce fichier ?\n\nLes fiches de tes parties sont conservées.`)) return;
+  // Les règles rattachées par un complément sont gardées si le nouveau fichier n'en apporte pas
+  if (existe?.donnees.regles && !d.regles) { d.regles = existe.donnees.regles; d.complements = existe.donnees.complements; }
   await DB.mettre('contenus', { id: d.id, importeLe: existe ? existe.importeLe : maintenant(), majLe: maintenant(), donnees: d });
   await chargerContenus();
   if (etat.partie && !etat.partie.module && confirm(`Lier « ${d.nom} » à la partie ouverte « ${etat.partie.nom} » ?`)) {
@@ -723,7 +726,7 @@ function rendreResultatJet(r) {
     <div class="meta">${esc(r.formule)} · dés ${r.physique ? 'physiques' : 'virtuels'}</div>
     ${r.totalForce != null ? `<div class="force">${r.chance ? 'Point de chance dépensé' : 'Total forcé'} (le jet donnait ${r.total})</div>` : ''}
     ${typeof boutonsJetSupp === 'function' ? boutonsJetSupp(r) : ''}
-    ${r.choixForcage ? `<div class="rangee" style="margin-top:10px"><input type="number" inputmode="numeric" id="total-force" placeholder="total"><button data-action="forcer-total">Valider</button></div>`
+    ${r.sansForcage ? '' : r.choixForcage ? `<div class="rangee" style="margin-top:10px"><input type="number" inputmode="numeric" id="total-force" placeholder="total"><button data-action="forcer-total">Valider</button></div>`
       : `<button class="lien" data-action="choix-forcage-jet">Forcer un autre total</button>`}
   </div>`;
 }
@@ -762,13 +765,13 @@ function texteEntree(h) {
     case 'carte': return `Carte${h.ajout ? ' ajoutée' : ''} : ${h.cartes.map(c => `${c.titre} (${c.deck})`).join(', ')}`;
     case 'jet': return `${h.libelle ? h.libelle + ' — ' : ''}${detailJet(h)}${h.reussite != null ? ` (${h.comp === '<=' ? '≤' : '≥'} ${h.seuil} : ${h.reussite ? 'réussite' : 'échec'})` : ''}${h.mention ? ' — ' + h.mention : ''}${h.physique ? ', dés physiques' : ''}`;
     case 'table': return `${h.libelle ? h.libelle + ' — ' : ''}${(h.resultats || []).map(r => `${r.table} (${r.de} = ${r.valeur}) → ${r.texte}`).join(' ; ')}${h.physique ? ', dés physiques' : ''}`;
-    case 'fiche': return h.texte;
+    case 'fiche': case 'combat': return h.texte;
     case 'derogation': return `Dérogation — ${h.texte}`;
     case 'texte': return h.texte;
     default: return h.texte || JSON.stringify(h);
   }
 }
-const ICONES = { ouinon: '?', mots: 'Aa', tourment: '✦', carte: '✦', jet: '⚄', table: '▤', fiche: '◈', derogation: '↺' };
+const ICONES = { ouinon: '?', mots: 'Aa', tourment: '✦', carte: '✦', jet: '⚄', table: '▤', fiche: '◈', derogation: '↺', combat: '⚔' };
 
 /* Texte des cartes (pour les exports) */
 function cartesDetail(h) {

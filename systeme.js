@@ -779,5 +779,7 @@ async function actionJeuPlus(a, b, mod, f, c) {
       f.armes.push({ nom: 'Nouvelle arme', attaque: (def.derivees || []).find(d => d.test)?.id || '', dm: '1d6', notes: '' });
       await sauverPartie(); return rendre();
     }
+    default:
+      if (a.startsWith('rg-') && typeof actionRegles === 'function') return actionRegles(a, b, mod, f);
   }
 }

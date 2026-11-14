@@ -416,11 +416,17 @@ async function vueJeu() {
       <p class="discret petit">Le module reste sur cet appareil, comme l'oracle.</p>
     </div>`;
   }
-  if (etat.ficheOuverte && ficheParId(etat.ficheOuverte)) return vueFiche(mod, ficheParId(etat.ficheOuverte));
-  const sous = etat.jeuSous || 'fiches';
-  const puces = `<div class="puces sous-onglets">${[['fiches', 'Fiches'], ['tables', 'Tables'], ['memo', 'Mémo']].map(([k, l]) =>
+  if (etat.ficheOuverte && ficheParId(etat.ficheOuverte)) {
+    const cb = p.combat;
+    return (cb?.phase === 'jeu' && !etat.ficheEdition ? `<button class="bandeau-combat" data-action="rg-ouvrir">⚔ Combat en cours · round ${cb.round} — reprendre</button>` : '') + vueFiche(mod, ficheParId(etat.ficheOuverte));
+  }
+  const avecRegles = typeof vueRegles === 'function' && (mod.regles || mod.test?.mode === 'bonus');
+  const sous = etat.jeuSous === 'regles' && !avecRegles ? 'fiches' : etat.jeuSous || 'fiches';
+  const cb = p.combat;
+  const puces = `<div class="puces sous-onglets">${[['fiches', 'Fiches'], ...(avecRegles ? [['regles', cb?.phase === 'jeu' ? '⚔ Règles' : 'Règles']] : []), ['tables', 'Tables'], ['memo', 'Mémo']].map(([k, l]) =>
     `<button class="puce ${sous === k ? 'choisie' : ''}" data-action="jeu-sous" data-v="${k}">${l}</button>`).join('')}</div>`;
-  return puces + (sous === 'tables' ? vueTables(mod) : sous === 'memo' ? vueMemo(mod) : vueListeFiches(mod));
+  const bandeau = cb?.phase === 'jeu' && sous !== 'regles' ? `<button class="bandeau-combat" data-action="rg-ouvrir">⚔ Combat en cours · round ${cb.round} — reprendre</button>` : '';
+  return puces + bandeau + (sous === 'tables' ? vueTables(mod) : sous === 'memo' ? vueMemo(mod) : sous === 'regles' ? vueRegles(mod) : vueListeFiches(mod));
 }
 
 /* ---------- Rendu : mémo des règles (section « memo » du module) ---------- */
@@ -620,6 +626,7 @@ function vueFiche(mod, f) {
   const deg = etat.dernier.degats?.fiche === f.id ? etat.dernier.degats : null;
   let html = `<div class="rangee entete-fiche">
       <button class="lien" data-action="jeu-fermer">‹ Fiches</button>
+      ${typeof vueRegles === 'function' && test?.mode === 'bonus' && def.caracs ? `<button class="lien" style="text-align:center" data-action="rg-fiche-regles">Règles</button>` : ''}
       <button class="lien" style="text-align:center" data-action="jeu-memo">Mémo</button>
       <button class="lien" style="text-align:right" data-action="jeu-editer">Modifier</button>
     </div>
@@ -891,11 +898,32 @@ async function jetRapide(mod, f, i) {
 }
 
 async function appliquerDegats(mod, f) {
-  const def = defFiche(mod, f.type);
-  const cfg = def.degats;
   const n = lireEntier($('#dg-n')?.value ?? '', 0, 999);
   if (n == null) return toast('Entre un nombre de dégâts');
-  const armure = $('#dg-sans-armure')?.checked ? 0 : (f.compteurs[cfg.armure] || 0);
+  await subirDegats(mod, f, n, { sansArmure: !!$('#dg-sans-armure')?.checked });
+  rendre();
+}
+
+/* Dégâts subis par une fiche (règle « degats » du module) ; utilisé aussi par l'assistant de combat.
+   Renvoie les lignes du détail. */
+async function subirDegats(mod, f, n, { sansArmure, source } = {}) {
+  const def = defFiche(mod, f.type);
+  const cfg = def.degats;
+  if (!cfg) {
+    // Pas de règle « degats » : on retire de la jauge de vitalité désignée par l'assistant
+    const x = typeof refFiche === 'function' ? refFiche(mod, f, 'pv') : null;
+    const id = x?.id || def.jauges?.[0]?.id;
+    const j = id && f.jauges[id];
+    if (!j) return [];
+    const av = j.act; j.act = Math.max(0, j.act - n);
+    const abr = def.jauges.find(y => y.id === id)?.abr || id;
+    await sauverPartie();
+    await noter({ type: 'fiche', texte: `${nomFiche(f, def)} subit ${n} dégât(s)${source ? ' (' + source + ')' : ''} : ${abr} ${av} → ${j.act}` });
+    const lignes = [`${n} dégât(s)`, `${abr} ${av} → ${j.act}`];
+    etat.dernier.degats = { fiche: f.id, lignes, exact: false, debord: 0 };
+    return lignes;
+  }
+  const armure = sansArmure ? 0 : (f.compteurs[cfg.armure] || 0);
   const d = Math.max(0, n - armure);
   const [j1, j2] = cfg.cascade;
   const J = id => f.jauges[id] || (f.jauges[id] = { max: 0, act: 0 });
@@ -920,9 +948,11 @@ async function appliquerDegats(mod, f) {
     if (jz) { const a = jz.act; jz.act = Math.max(0, Math.min(jz.max, jz.act + (z.mod || 0))); lignes.push(`${z.texte || ''}${z.texte ? ' ' : ''}(${def.jauges.find(x => x.id === z.jauge)?.abr || z.jauge} ${a} → ${jz.act})`); }
   }
   await sauverPartie();
-  await noter({ type: 'fiche', texte: `${nomFiche(f, def)} subit ${n} dégât(s)${armure ? ` (armure ${armure})` : ''} : ${lignes.slice(1).join(' ; ')}${exact ? ' — à 0 exactement' : ''}` });
+  await noter({ type: 'fiche', texte: `${nomFiche(f, def)} subit ${n} dégât(s)${source ? ' (' + source + ')' : ''}${armure ? ` (armure ${armure})` : ''} : ${lignes.slice(1).join(' ; ')}${exact ? ' — à 0 exactement' : ''}` });
   etat.dernier.degats = { fiche: f.id, lignes, exact, debord };
-  rendre();
+  if (exact && cfg.zeroExact?.texte) lignes.alerte = cfg.zeroExact.texte;
+  else if (debord && cfg.debordement?.texte) lignes.alerte = cfg.debordement.texte;
+  return lignes;
 }
 
 async function soignerFiche(mod, f) {
