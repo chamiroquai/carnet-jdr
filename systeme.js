@@ -95,7 +95,9 @@ const debutVoie = v => v?.debut || 1;
 const finVoie = v => debutVoie(v) + (v?.capacites || []).length - 1;
 function capsAcquises(v, rang) { return (v?.capacites || []).slice(0, Math.max(0, rang - debutVoie(v) + 1)); }
 function regleVoies(def) {
-  return { titre: 'Voies et capacités', cout: [1, 1, 2, 2, 2, 2, 2, 2], niveau: [1, 2, 3, 5, 7, 9, 11, 13], parNiveau: 2, ...(def?.voies || {}) };
+  const R = { titre: 'Voies et capacités', cout: [1, 1, 2, 2, 2, 2, 2, 2], niveau: [1, 2, 3, 5, 7, 9, 11, 13], parNiveau: 2, ...(def?.voies || {}) };
+  R.mots = { rang: 'rang', point: 'point de capacité', points: 'points de capacité', ouvrir: 'Ouvrir une nouvelle voie', titreAjout: 'Ouvrir une voie', voie: 'voie', ...(R.mots || {}) };
+  return R;
 }
 function nbSorts(mod, f) {
   let n = 0;
@@ -205,7 +207,7 @@ function sauterEtapesInactives(mod, c) {
   const et = defFiche(mod, c.type).creation || [];
   while (c.pas < et.length && !etapeActive(et[c.pas], c.vars)) c.pas++;
 }
-const ETAPES_SANS_JET = ['saisie', 'objets', 'repartition', 'ajustement', 'voie', 'voies'];
+const ETAPES_SANS_JET = ['saisie', 'objets', 'repartition', 'ajustement', 'voie', 'voies', 'competences', 'achat'];
 
 function serieRepartition(p, vars) {
   const s = p.series?.[vars?.[p.serieVar]] || Object.values(p.series || {})[0] || [];
@@ -243,8 +245,13 @@ function optionsVoiesEtape(mod, c, p) {
   }
   const groupe = p.parmi?.groupe ? remplirModele(p.parmi.groupe, c.vars) : null;
   const types = p.parmi?.types;
-  return (mod.voies || []).filter(v => !acquises.has(v.id) && (!groupe || v.groupe === groupe) && (!types || types.includes(v.type)))
-    .map(v => ({ v, rang: p.rang || debutVoie(v) }));
+  const liste = p.cas ? [].concat(p.cas[c.vars?.[p.parVar]] || []) : p.parmi?.ids || null;
+  // « cumul » : une voie déjà acquise peut être reprise, elle monte alors d'un rang
+  const cumul = regleVoies(defFiche(mod, c.type)).cumul;
+  return (mod.voies || []).filter(v => (!acquises.has(v.id) || cumul) && (!groupe || v.groupe === groupe) && (!types || types.includes(v.type)) && (!liste || liste.includes(v.id)))
+    .map(v => { const x = f.voies?.find(y => y.id === v.id); return { v, rang: x ? x.rang + 1 : p.rang || debutVoie(v) }; })
+    .filter(o => o.rang <= finVoie(o.v))
+    .sort((a, b) => (liste ? liste.indexOf(a.v.id) - liste.indexOf(b.v.id) : 0));
 }
 
 function corpsEtapePlus(mod, c, p, r) {
@@ -356,7 +363,8 @@ function validerEtapePlus(mod, c, p) {
 }
 
 /* Effets supplémentaires : bonus et caractéristiques (appelé par appliquerEffets) */
-function appliquerEffetPlus(f, ef) {
+function appliquerEffetPlus(f, ef, c) {
+  if (typeof appliquerEffetAge === 'function') appliquerEffetAge(f, ef, c);
   if (ef.bonus != null) {
     f.bonus = f.bonus || {};
     if (ef.fixer != null) f.bonus[ef.bonus] = ef.fixer;
@@ -478,6 +486,7 @@ async function testBonus(mod, f, { carac, derivee, arme }) {
 /* Boutons ajoutés sous le résultat d'un jet de fiche : point de chance, dommages de l'arme */
 function boutonsJetSupp(r) {
   if (!r?.origine?.startsWith('fiche:')) return '';
+  if (typeof boutonsJetAge === 'function' && estAge(moduleActif())) return boutonsJetAge(r);
   const mod = moduleActif();
   const f = ficheParId(r.origine.slice(6));
   if (!mod || !f) return '';
@@ -539,25 +548,25 @@ function vueVoies(mod, f, def) {
   const sorts = nbSorts(mod, f);
   let html = `<div class="carte" id="carte-voies">
     <h2>${esc(R.titre)}</h2>
-    <p class="discret petit">${dispo > 0 ? `<strong class="force">${dispo} point${dispo > 1 ? 's' : ''} de capacité à dépenser</strong>` : dispo < 0 ? `<span class="force">${-dispo} point${dispo < -1 ? 's' : ''} dépensé${dispo < -1 ? 's' : ''} en trop</span>` : 'Aucun point de capacité en attente'}${sorts ? ` · ${sorts} sort${sorts > 1 ? 's' : ''}` : ''}</p>`;
+    <p class="discret petit">${dispo > 0 ? `<strong class="force">${dispo} ${dispo > 1 ? R.mots.points : R.mots.point} à dépenser</strong>` : dispo < 0 ? `<span class="force">${-dispo} ${dispo < -1 ? R.mots.points : R.mots.point} dépensé${dispo < -1 ? 's' : ''} en trop</span>` : R.mots.aucun || `Aucun ${R.mots.point} en attente`}${sorts ? ` · ${sorts} sort${sorts > 1 ? 's' : ''}` : ''}</p>`;
   for (const x of f.voies || []) {
     const v = voieParId(mod, x.id);
     if (!v) { html += `<p class="discret petit">Voie « ${esc(x.id)} » absente du module.</p>`; continue; }
     const fin = finVoie(v);
     const suivant = x.rang + 1;
     html += `<details class="voie" data-garde="voie-${esc(v.id)}">
-      <summary><strong>${esc(v.nom)}</strong> <span class="discret petit">· rang ${x.rang}${libelleTypeVoie(mod, v, f) ? ' · ' + esc(libelleTypeVoie(mod, v, f)) : ''}</span></summary>
+      <summary><strong>${esc(v.nom)}</strong> <span class="discret petit">· ${R.nomRang ? esc(v.capacites[x.rang - debutVoie(v)] || '') : `${R.mots.rang} ${x.rang}`}${libelleTypeVoie(mod, v, f) ? ' · ' + esc(libelleTypeVoie(mod, v, f)) : ''}</span></summary>
       <ol class="caps">${v.capacites.map((cap, i) => { const r = debutVoie(v) + i; return `<li class="${r <= x.rang ? 'acquise' : ''}"><span class="n">${r}</span>${esc(cap)}</li>`; }).join('')}</ol>
       <div class="rangee">
-        <button data-action="voie-moins" data-id="${esc(v.id)}">${x.rang <= debutVoie(v) ? 'Retirer' : 'Rang −'}</button>
-        ${suivant <= fin ? `<button class="principal" data-action="voie-plus" data-id="${esc(v.id)}">Rang ${suivant} <small>(${R.cout[suivant - 1] ?? 2} pt, niv. ${R.niveau[suivant - 1] ?? '?'})</small></button>` : ''}
+        <button data-action="voie-moins" data-id="${esc(v.id)}">${x.rang <= debutVoie(v) ? 'Retirer' : R.nomRang ? '−' : 'Rang −'}</button>
+        ${suivant <= fin ? `<button class="principal" data-action="voie-plus" data-id="${esc(v.id)}">${R.nomRang ? esc(v.capacites[suivant - debutVoie(v)] || '') : 'Rang ' + suivant} <small>(${R.cout[suivant - 1] ?? 2} pt${R.niveau[suivant - 1] > 1 ? ', niv. ' + R.niveau[suivant - 1] : ''})</small></button>` : ''}
       </div>
       <textarea id="vn-${esc(v.id)}" rows="2" placeholder="Notes (effets, rappels, page du livre…)">${esc(x.note || '')}</textarea>
       <button class="lien" data-action="voie-note" data-id="${esc(v.id)}">Enregistrer la note</button>
     </details>`;
   }
   if (etat.ajoutVoie) html += vueAjoutVoie(mod, f, def);
-  else html += `<button data-action="voie-ajout" style="margin-top:10px">Ouvrir une nouvelle voie</button>`;
+  else html += `<button data-action="voie-ajout" style="margin-top:10px">${esc(R.mots.ouvrir)}</button>`;
   return html + '</div>';
 }
 
@@ -573,9 +582,9 @@ function vueAjoutVoie(mod, f, def) {
   }
   groupes.sort((a, b) => (b.nom === profil) - (a.nom === profil));
   return `<div class="ajout-voie">
-    <div class="rangee"><h3 style="margin:0">Ouvrir une voie</h3><button class="lien" style="flex:0 0 auto" data-action="voie-ajout-fermer">Fermer</button></div>
+    <div class="rangee"><h3 style="margin:0">${esc(regleVoies(def).mots.titreAjout)}</h3><button class="lien" style="flex:0 0 auto" data-action="voie-ajout-fermer">Fermer</button></div>
     ${groupes.map(g => `<details class="de-physique" data-garde="av-${esc(g.nom)}" ${g.nom === profil ? 'open' : ''}><summary>${esc(g.nom)}${g.nom === profil ? ' (ton profil)' : ''}</summary>
-      <div class="pile">${g.voies.map(v => `<button data-action="voie-choisir" data-id="${esc(v.id)}">${esc(v.nom)}<small class="discret"> — ${debutVoie(v)}. ${esc(v.capacites[0] || '')}</small></button>`).join('')}</div></details>`).join('')}
+      <div class="pile">${g.voies.map(v => `<button data-action="voie-choisir" data-id="${esc(v.id)}">${esc(v.nom)}<small class="discret"> — ${v.detail ? esc(v.detail) : `${debutVoie(v)}. ${esc(v.capacites[0] || '')}`}</small></button>`).join('')}</div></details>`).join('')}
   </div>`;
 }
 
@@ -588,7 +597,7 @@ async function changerRangVoie(mod, f, id, delta) {
   const nom = nomFiche(f, def);
   if (delta < 0) {
     if (x.rang <= debutVoie(v)) {
-      if (!confirm(`Retirer la ${v.nom.toLowerCase()} de la fiche ?`)) return;
+      if (!confirm(`Retirer « ${v.nom} » de la fiche ?`)) return;
       f.voies = f.voies.filter(y => y !== x);
       await noter({ type: 'fiche', texte: `${nom} : ${v.nom} retirée` });
     } else {
@@ -601,12 +610,12 @@ async function changerRangVoie(mod, f, id, delta) {
     const pb = [];
     if ((f.niveau ?? 1) < (R.niveau[r - 1] ?? 0)) pb.push(`le rang ${r} demande le niveau ${R.niveau[r - 1]}`);
     const cout = R.cout[r - 1] ?? 2;
-    if (pointsDispo(mod, f, def) < cout) pb.push(`il faut ${cout} point${cout > 1 ? 's' : ''} de capacité (disponibles : ${Math.max(0, pointsDispo(mod, f, def))})`);
+    if (pointsDispo(mod, f, def) < cout) pb.push(`il faut ${cout} ${cout > 1 ? R.mots.points : R.mots.point} (disponibles : ${Math.max(0, pointsDispo(mod, f, def))})`);
     if (pb.length && !confirm(`Règle : ${pb.join(' ; ')}.\n\nPasser outre ? (Ce sera noté comme dérogation.)`)) return;
     x.rang = r;
     const cap = v.capacites[r - debutVoie(v)];
     if (pb.length) await noter({ type: 'derogation', texte: `${nom} : ${v.nom} rang ${r} malgré la règle (${pb.join(' ; ')})` });
-    await noter({ type: 'fiche', texte: `${nom} : ${v.nom}, rang ${r} — ${cap}` });
+    await noter({ type: 'fiche', texte: R.nomRang ? `${nom} : ${v.nom} — ${cap}` : `${nom} : ${v.nom}, rang ${r} — ${cap}` });
   }
   recalculerFiche(mod, f, def);
   await sauverPartie();
@@ -625,12 +634,12 @@ async function ouvrirVoie(mod, f, id) {
   if ((f.niveau ?? 1) < (R.niveau[rang - 1] ?? 0)) pb.push(`le rang ${rang} demande le niveau ${R.niveau[rang - 1]}`);
   if (v.type === 'prestige' && (f.voies || []).some(x => voieParId(mod, x.id)?.type === 'prestige')) pb.push('une seule voie de prestige par personnage');
   const cout = R.cout[rang - 1] ?? 1;
-  if (pointsDispo(mod, f, def) < cout) pb.push(`il faut ${cout} point${cout > 1 ? 's' : ''} de capacité (disponibles : ${Math.max(0, pointsDispo(mod, f, def))})`);
+  if (pointsDispo(mod, f, def) < cout) pb.push(`il faut ${cout} ${cout > 1 ? R.mots.points : R.mots.point} (disponibles : ${Math.max(0, pointsDispo(mod, f, def))})`);
   if (pb.length && !confirm(`Règle : ${pb.join(' ; ')}.\n\nPasser outre ? (Ce sera noté comme dérogation.)`)) return;
   ajouterVoie(f, v, rang);
   const nom = nomFiche(f, def);
   if (pb.length) await noter({ type: 'derogation', texte: `${nom} : ${v.nom} ouverte malgré la règle (${pb.join(' ; ')})` });
-  await noter({ type: 'fiche', texte: `${nom} ouvre la ${v.nom.charAt(0).toLowerCase() + v.nom.slice(1)} — ${rang}. ${v.capacites[0]}` });
+  await noter({ type: 'fiche', texte: R.mots.prend ? `${nom} ${R.mots.prend} ${v.nom} (${v.capacites[0]})` : `${nom} ouvre la ${v.nom.charAt(0).toLowerCase() + v.nom.slice(1)} — ${rang}. ${v.capacites[0]}` });
   etat.ajoutVoie = false;
   recalculerFiche(mod, f, def);
   await sauverPartie();
@@ -657,7 +666,8 @@ async function passerNiveau(mod, f) {
     const j = f.jauges[id];
     if (j && j.act < j.max) { parts.push(`${def.jauges.find(x => x.id === id)?.abr || id} restaurés (${j.act} → ${j.max})`); j.act = j.max; }
   }
-  if (def.voies) parts.push(`+${regleVoies(def).parNiveau} points de capacité`);
+  if (def.voies) { const R = regleVoies(def); parts.push(`+${R.parNiveau} ${R.parNiveau > 1 ? R.mots.points : R.mots.point}`); }
+  if (N.rappel) parts.push(N.rappel);
   await sauverPartie();
   await noter({ type: 'fiche', texte: `${nomFiche(f, def)} passe au niveau ${n}${parts.length ? ' : ' + parts.join(', ') : ''}` });
   toast(`Niveau ${n}`);
@@ -678,7 +688,8 @@ function vueEditionPlus(mod, f, def) {
       <input type="text" inputmode="text" id="fe-b-${esc(x.id)}" value="${f.bonus?.[x.id] ?? 0}"></div>`).join('')}`;
   if ((def.parametres || []).length) html += `<details class="de-physique" data-garde="fe-param"><summary>Paramètres de calcul</summary>
     ${def.parametres.map(p => `<div class="rangee edition-jauge"><span>${esc(p.nom)}</span><input type="text" id="fe-p-${esc(p.id)}" value="${esc(f.vars?.[p.id] ?? '')}"></div>`).join('')}</details>`;
-  if (def.armes) {
+  if (typeof vueEditionAge === 'function' && estAge(mod)) html += vueEditionAge(mod, f, def);
+  else if (def.armes) {
     const att = (def.derivees || []).filter(d => d.test);
     html += `<h3>${esc(def.armes.titre || 'Armes')}</h3>
       ${(f.armes || []).map((a, i) => `<div class="edition-arme">
@@ -706,7 +717,8 @@ function lireEditionPlus(mod, f, def) {
     const s = el.value.trim();
     f.vars[p.id] = s !== '' && Number.isFinite(Number(s)) ? Number(s) : s;
   }
-  if (def.armes) {
+  if (typeof lireEditionAge === 'function' && estAge(mod)) lireEditionAge(mod, f, def);
+  else if (def.armes) {
     const armes = [];
     (f.armes || []).forEach((a, i) => {
       if (document.getElementById(`fe-a-${i}-suppr`)?.checked) return;
@@ -780,6 +792,7 @@ async function actionJeuPlus(a, b, mod, f, c) {
       await sauverPartie(); return rendre();
     }
     default:
+      if (a.startsWith('age-') && typeof actionAge === 'function') return actionAge(a, b, mod, f, c);
       if (a.startsWith('rg-') && typeof actionRegles === 'function') return actionRegles(a, b, mod, f);
       if ((a.startsWith('rc-') || a.startsWith('rt-')) && typeof actionRencontres === 'function') return actionRencontres(a, b, mod);
   }

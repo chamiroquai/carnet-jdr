@@ -325,6 +325,17 @@ async function rencontreVersFiches(mod) {
       if (Number.isFinite(v) && f.jauges[jid]) f.jauges[jid] = { max: v, act: v };
     }
     for (const [src, cid] of Object.entries(V.compteurs || {})) { const v = Number(c[src]); if (Number.isFinite(v)) f.compteurs[cid] = v; }
+    // Profils complets : caractéristiques, compétences, armes, valeurs calculées ramenées à celles du profil
+    if (V.caracs && c.caracs) f.caracs = { ...(f.caracs || {}), ...c.caracs };
+    if (V.competences && c.competences) f.competences = c.competences.map(x => ({ ...x }));
+    if (V.armes && c.armes) f.armes = c.armes.map(x => ({ ...x }));
+    if (V.cibles && typeof contexteFiche === 'function') {
+      const ctx = contexteFiche(mod, f, def);
+      for (const [src, did] of Object.entries(V.cibles)) {
+        const v = Number(c[src]);
+        if (Number.isFinite(v) && did in ctx) f.bonus[did] = (f.bonus[did] || 0) + v - ctx[did];
+      }
+    }
     for (const [src, chid] of Object.entries(V.champs || {})) {
       const v = src === 'notes' ? [c.type, c.notes].filter(Boolean).join('\n') : c[src];
       if (v) f.champs[chid] = String(v);

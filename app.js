@@ -3,7 +3,7 @@
    sont importés par l'utilisateur et restent stockés sur l'appareil. */
 'use strict';
 
-const VERSION_APP = '1.5.0';
+const VERSION_APP = '1.6.0';
 const FORMAT_ORACLE = 'carnet-jdr-oracle';
 const FORMAT_SAUVEGARDE = 'carnet-jdr-sauvegarde';
 const FACES = [4, 6, 8, 10, 12, 20, 100];
@@ -723,7 +723,7 @@ async function vueDes() {
 }
 
 function rendreResultatJet(r) {
-  const des = r.des.map((v, i) => `<span class="de-res ${r.gardes.includes(i) ? '' : 'ecarte'}">${v}</span>`).join('');
+  const des = r.des.map((v, i) => `<span class="de-res ${r.gardes.includes(i) ? '' : 'ecarte'}${r.special === i ? ' special' : ''}">${v}</span>`).join('');
   return `<div class="resultat">
     ${r.libelle ? `<div class="meta">${esc(r.libelle)}</div>` : ''}
     <div class="reponse ${r.reussite === true ? 'oui' : r.reussite === false ? 'non' : ''}">${r.totalForce ?? r.total}</div>

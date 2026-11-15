@@ -68,6 +68,7 @@ function validerModule(d) {
   for (const g of d.generateurs || []) for (const id of g.tables || []) if (!ids.has(id)) avert.push(`Générateur « ${g.nom} » : table « ${id} » introuvable.`);
   if (typeof validerModulePlus === 'function') validerModulePlus(d, erreurs, avert);
   if (typeof validerRencontres === 'function') validerRencontres(d, erreurs, avert);
+  if (typeof validerAge === 'function') validerAge(d, erreurs, avert);
   return { erreurs, avert };
 }
 function minFormule(f) { return (f.garde !== 'tous' ? f.k : f.n) + (f.mod || 0); }
@@ -233,7 +234,7 @@ function appliquerEffets(c, effets) {
       if (ef.fixer != null) c.fiche.compteurs[ef.compteur] = ef.fixer;
       if (ef.mod) c.fiche.compteurs[ef.compteur] = (c.fiche.compteurs[ef.compteur] || 0) + ef.mod;
     }
-    appliquerEffetPlus(c.fiche, ef);
+    appliquerEffetPlus(c.fiche, ef, c);
   }
   synchroniserCreation(c);
 }
@@ -300,6 +301,7 @@ function tirerEtape(mod, c, p, valeurs, choixManuel) {
     const jets = p.jauges.map((j, k) => calculerJet(f, valeurs ? valeurs.slice(k * f.n, (k + 1) * f.n) : null));
     return { type: 'attributs', jets: jets.map(j => ({ des: j.des, gardes: j.gardes, total: j.total })), ordre: [...p.jauges], physique: !!valeurs };
   }
+  if (p.type === 'tirageCaracs' && typeof tirerEtapeAge === 'function') return tirerEtapeAge(mod, c, p, valeurs);
   if (p.type === 'jet') {
     const j = calculerJet(lireFormule(p.formule), valeurs);
     return { type: 'jet', des: j.des, gardes: j.gardes, total: j.total, physique: !!valeurs };
@@ -310,6 +312,7 @@ function tirerEtape(mod, c, p, valeurs, choixManuel) {
 /* Applique le résultat validé de l'étape courante à la fiche en création */
 function validerEtape(mod, c, p) {
   if (['repartition', 'ajustement', 'voie', 'voies'].includes(p.type)) return validerEtapePlus(mod, c, p);
+  if (typeof ETAPES_AGE !== 'undefined' && ETAPES_AGE.includes(p.type)) return validerEtapeAge(mod, c, p);
   const r = c.courant;
   const f = c.fiche;
   const lignes = [];
@@ -374,7 +377,7 @@ function validerEtape(mod, c, p) {
     if (genre === 'champ') ajouterChamp(f, id, liste.map(o => o.texte).join('\n'), true);
     else for (const o of liste) placerObjet(f, defFiche(mod, c.type), { texte: o.texte, encombrant: !!o.encombrant }, o.groupe);
     for (const o of liste) {
-      if (o.arme) f.armes = [...(f.armes || []), { nom: o.arme.nom || o.texte, attaque: o.arme.attaque || '', dm: o.arme.dm || '', notes: o.arme.notes || '' }];
+      if (o.arme) f.armes = [...(f.armes || []), { ...o.arme, nom: o.arme.nom || o.texte, attaque: o.arme.attaque || '', dm: o.arme.dm || '', notes: o.arme.notes || '' }];
       appliquerEffets(c, o.effets);
     }
     lignes.push(`${p.nom} : ${liste.map(o => o.texte).join(', ')}`);
@@ -428,7 +431,7 @@ async function vueJeu() {
   const puces = `<div class="puces sous-onglets">${[['fiches', 'Fiches'], ...(avecRegles ? [['regles', cb?.phase === 'jeu' ? '⚔ Règles' : 'Règles']] : []), ...(avecRencontres ? [['rencontres', 'Rencontres']] : []), ['tables', 'Tables'], ['memo', 'Mémo']].map(([k, l]) =>
     `<button class="puce ${sous === k ? 'choisie' : ''}" data-action="jeu-sous" data-v="${k}">${l}</button>`).join('')}</div>`;
   const bandeau = cb?.phase === 'jeu' && sous !== 'regles' ? `<button class="bandeau-combat" data-action="rg-ouvrir">⚔ Combat en cours · round ${cb.round} — reprendre</button>` : '';
-  return puces + bandeau + (sous === 'tables' ? vueTables(mod) : sous === 'memo' ? vueMemo(mod) : sous === 'regles' ? vueRegles(mod) : sous === 'rencontres' && avecRencontres ? vueRencontres(mod) : vueListeFiches(mod));
+  return puces + bandeau + (sous === 'tables' ? vueTables(mod) : sous === 'memo' ? vueMemo(mod) : sous === 'regles' ? vueRegles(mod) : sous === 'rencontres' && avecRencontres ? vueRencontres(mod) : (typeof vueReserveAge === 'function' ? vueReserveAge(mod) : '') + vueListeFiches(mod));
 }
 
 /* ---------- Rendu : mémo des règles (section « memo » du module) ---------- */
@@ -531,6 +534,7 @@ function lireValeursPhysiques(id, n, faces) {
 
 function corpsEtape(mod, c, p, r) {
   if (['repartition', 'ajustement', 'voie', 'voies', 'objets'].includes(p.type)) return corpsEtapePlus(mod, c, p, r);
+  if (typeof ETAPES_AGE !== 'undefined' && ETAPES_AGE.includes(p.type)) return corpsEtapeAge(mod, c, p, r);
   if (p.type === 'table') {
     const tid = remplirModele(p.table, c.vars);
     const t = tableParId(mod, tid);
@@ -652,6 +656,7 @@ function vueFiche(mod, f) {
     </div>`;
 
   if (test?.mode === 'bonus' && def.caracs) html += vueTestsBonus(mod, f, def);
+  else if (test?.mode === 'age' && def.caracs && typeof vueTestsAge === 'function') html += vueTestsAge(mod, f, def);
   else if (test && testables.length) {
     html += `<div class="carte">
       <h2>${esc(test.nom || 'Test')}s</h2>
@@ -668,8 +673,9 @@ function vueFiche(mod, f) {
     </div>`;
   }
 
-  if (def.armes) html += vueArmes(mod, f, def);
-  if (def.degats) {
+  if (def.armes) html += test?.mode === 'age' && typeof vueArmesAge === 'function' ? vueArmesAge(mod, f, def) : vueArmes(mod, f, def);
+  if (def.degats?.mode === 'paliers' && typeof vueDegatsAge === 'function') html += vueDegatsAge(mod, f, def);
+  else if (def.degats) {
     const cfg = def.degats;
     html += `<div class="carte">
       <h2>${esc(cfg.titre || 'Subir des dégâts')}</h2>
