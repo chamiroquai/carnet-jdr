@@ -3,7 +3,7 @@
    sont importés par l'utilisateur et restent stockés sur l'appareil. */
 'use strict';
 
-const VERSION_APP = '1.6.0';
+const VERSION_APP = '1.7.0';
 const FORMAT_ORACLE = 'carnet-jdr-oracle';
 const FORMAT_SAUVEGARDE = 'carnet-jdr-sauvegarde';
 const FACES = [4, 6, 8, 10, 12, 20, 100];
@@ -144,6 +144,7 @@ async function fixerReglage(cle, val) {
 async function noter(entree) {
   const e = { t: maintenant(), partie: etat.partie?.id ?? null, seance: etat.partie?.seance ?? null, ...entree };
   e.id = await DB.mettre('historique', e);
+  etat.animer = true;   // le prochain rendu anime le résultat qui vient d'être tiré
   if (etat.partie) { etat.partie.majLe = e.t; await DB.mettre('parties', etat.partie); }
   await signalerChangement();
   return e;
@@ -367,8 +368,29 @@ async function verifierRappel() {
   } else band.hidden = true;
 }
 
+/* ---------- Ambiances ---------- */
+const AMBIANCES = { carnet: 'Carnet de cuir', bord: 'Livre de bord', console: 'Console' };
+
+// Une partie peut choisir son ambiance ; sinon celle proposée par son module (champ « ambiance »), sinon le carnet.
+function ambianceDe(p) {
+  if (!p) return etat.ambianceHors;
+  if (AMBIANCES[p.ambiance]) return p.ambiance;
+  const suggeree = etat.contenus.find(c => c.id === p.module)?.donnees.ambiance;
+  return AMBIANCES[suggeree] ? suggeree : 'carnet';
+}
+
+function appliquerAmbiance(a) {
+  const r = document.documentElement;
+  r.dataset.anim = etat.animations ? 'oui' : 'non';
+  if (r.dataset.ambiance === a) return;
+  r.dataset.ambiance = a;
+  const fond = getComputedStyle(r).getPropertyValue('--fond').trim();
+  if (fond) document.querySelector('meta[name="theme-color"]')?.setAttribute('content', fond);
+}
+
 /* ---------- Vues ---------- */
-const TITRES = { ouinon: 'Oracle oui/non', mots: 'Mots clés', evenements: 'Événements', des: 'Dés', jeu: 'Jeu', journal: 'Journal', parties: 'Parties', reglages: 'Réglages' };
+const VUES_ORACLE = [['ouinon', 'Oui / Non'], ['mots', 'Mots'], ['evenements', 'Événements']];
+const TITRES = { ouinon: 'Oracle', mots: 'Oracle', evenements: 'Oracle', des: 'Dés', jeu: 'Jeu', journal: 'Journal', parties: 'Parties', reglages: 'Réglages' };
 
 function sansOracle(section) {
   return `<div class="carte vide">
@@ -410,7 +432,7 @@ function rendreResultatOuiNon(r, o) {
   const rep = o.reponses[r.indice];
   return `<div class="resultat">
     ${r.question ? `<div class="meta">« ${esc(r.question)} »</div>` : ''}
-    <div class="reponse ${esc(rep.sens || '')}">${esc(rep.texte)}</div>
+    <div class="reponse tampon ${esc(rep.sens || '')}">${esc(rep.texte)}</div>
     <div class="meta">d${o.de} = ${r.valeur} · ${esc(r.probaNom)} · dé ${r.physique ? 'physique' : 'virtuel'}</div>
     ${r.forcee ? `<div class="force">Réponse forcée (l'oracle avait donné « ${esc(o.reponses[r.indiceOrigine].texte)} »)</div>` : ''}
     ${r.choixForcage ? `<div class="pile" style="margin-top:10px">${o.reponses.map((x, i) =>
@@ -865,6 +887,9 @@ async function vueParties() {
     <h3>Module de jeu</h3>
     <select id="p-module"><option value="">Aucun (jeu libre)</option>${modulesImportes().map(m => `<option value="${esc(m.id)}" ${f.module === m.id ? 'selected' : ''}>${esc(m.donnees.nom)}</option>`).join('')}</select>
     <p class="discret petit">${modulesImportes().length ? 'Le module donne les fiches, la création de personnage et les tables (onglet Jeu).' : 'Aucun module importé : tu pourras en lier un plus tard depuis l’onglet Jeu.'}</p>
+    <h3>Ambiance</h3>
+    <select id="p-ambiance"><option value="">Automatique (selon le module)</option>${Object.entries(AMBIANCES).map(([k, n]) => `<option value="${k}" ${f.ambiance === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
+    <p class="discret petit">L'appli prend cette ambiance quand la partie est ouverte.</p>
     <h3>Jeu (facultatif)</h3>
     <input type="text" id="p-jeu" value="${esc(f.jeu)}" placeholder="Ex. : le nom du système joué">
     ${!f.id && decks.length ? `<h3>Decks d'événements</h3>
@@ -877,7 +902,7 @@ async function vueParties() {
   </div>` : `<button class="principal" data-action="p-nouvelle" style="margin-bottom:14px">Nouvelle partie</button>`}
   ${etat.parties.map(p => `<div class="carte partie ${etat.partie?.id === p.id ? 'active' : ''}">
     <div class="titre">${esc(p.nom)} ${etat.partie?.id === p.id ? '<span class="etiquette">en cours</span>' : ''}</div>
-    <div class="discret petit">${p.jeu ? esc(p.jeu) + ' · ' : ''}${p.seances.length} séance(s) · ${compte(p.id)} entrée(s) · ${esc(dateFr(p.majLe))}</div>
+    <div class="discret petit">${p.jeu ? esc(p.jeu) + ' · ' : ''}${AMBIANCES[ambianceDe(p)]} · ${p.seances.length} séance(s) · ${compte(p.id)} entrée(s) · ${esc(dateFr(p.majLe))}</div>
     <div class="rangee" style="margin-top:8px">
       ${etat.partie?.id === p.id ? '<button data-action="p-journal">Journal</button>' : `<button data-action="p-ouvrir" data-id="${esc(p.id)}">Ouvrir</button>`}
       <button class="lien" data-action="p-modifier" data-id="${esc(p.id)}">Modifier</button>
@@ -897,7 +922,7 @@ function grouperParSeance(partie, entrees) {
   return partie.seances.map(s => ({ ...s, entrees: entrees.filter(e => (e.seance ?? 1) === s.numero) }));
 }
 
-function rendreEntree(e) {
+function rendreEntree(e, ouverture = false) {
   const menu = etat.menu === e.id;
   const actions = menu ? `<div class="menu-entree">
     ${e.type === 'texte' ? `<button class="lien" data-action="j-modifier" data-id="${e.id}">Modifier</button>` : ''}
@@ -910,11 +935,11 @@ function rendreEntree(e) {
         <label class="case petit"><input type="checkbox" id="edition-note" ${e.note ? 'checked' : ''}> Note hors récit</label>
         <div class="rangee"><button data-action="j-annuler">Annuler</button><button class="principal" style="flex:2" data-action="j-enregistrer" data-id="${e.id}">Enregistrer</button></div></li>`;
     }
-    return `<li class="j-texte ${e.note ? 'note' : ''}" data-action="j-menu" data-id="${e.id}">
+    return `<li class="j-texte ${e.note ? 'note' : ''}${ouverture ? ' ouverture' : ''}" data-action="j-menu" data-id="${e.id}">
       ${e.note ? '<div class="quand">Note hors récit</div>' : ''}<div class="prose">${esc(e.texte)}</div>${actions}</li>`;
   }
   const cartes = cartesDetail(e);
-  return `<li class="j-meca ${e.type === 'derogation' ? 'derog' : ''}" data-action="j-menu" data-id="${e.id}">
+  return `<li class="j-meca t-${esc(e.type)} ${e.type === 'derogation' ? 'derog' : ''}" data-action="j-menu" data-id="${e.id}">
     <span class="ico-meca">${ICONES[e.type] || '•'}</span>
     <div><div class="quoi">${esc(texteEntree(e))}</div>
     ${cartes.length ? `<div class="detail-cartes">${cartes.map(t => `<div>${esc(t)}</div>`).join('')}</div>` : ''}
@@ -939,17 +964,19 @@ async function vueJournal() {
   if (etat.exportOuvert && entrees.length) html += await blocExport(p, entrees);
   html += `<div class="carte journal">`;
   if (!entrees.length && (!p || p.seances.length === 1)) {
-    html += `<p class="discret" style="text-align:center">Le journal est vide. Les questions à l'oracle, mots, cartes et jets s'inscrivent ici ; écris ton propre texte ci-dessous.</p>`;
+    html += `<div class="page-blanche"><div class="page-blanche-titre">Page blanche</div><p class="discret">Questions à l'oracle, mots, cartes et jets s'inscriront ici en marge. Écris la suite de l'histoire ci-dessous.</p></div>`;
   }
   for (const g of groupes) {
     if (g.numero != null && (p.seances.length > 1 || g.entrees.length)) {
-      html += `<h3 class="seance">Séance ${g.numero} <span class="discret petit">· ${esc(dateFr(g.debut, false))}</span></h3>`;
+      html += `<h3 class="seance"><span class="seance-num">Séance ${g.numero}</span> <span class="seance-date">${esc(dateFr(g.debut, false))}</span></h3>`;
     }
-    html += g.entrees.length ? `<ul class="journal-liste">${g.entrees.map(rendreEntree).join('')}</ul>` : '<p class="discret petit">Séance vide pour l’instant.</p>';
+    // La première page de récit de chaque séance reçoit une lettrine
+    const ouverture = g.entrees.find(e => e.type === 'texte' && !e.note)?.id;
+    html += g.entrees.length ? `<ul class="journal-liste">${g.entrees.map(e => rendreEntree(e, e.id === ouverture)).join('')}</ul>` : '<p class="discret petit">Séance vide pour l’instant.</p>';
   }
   html += `</div>
   <div class="carte ecrire">
-    <textarea id="brouillon" rows="4" placeholder="Écris la suite : ce que fait ton personnage, ce que tu décides, ce que tu en penses…">${esc(etat.brouillon)}</textarea>
+    <textarea id="brouillon" class="recit" rows="4" placeholder="Écris la suite : ce que fait ton personnage, ce que tu décides, ce que tu en penses…">${esc(etat.brouillon)}</textarea>
     <div class="rangee">
       <label class="case petit" style="flex:1"><input type="checkbox" id="brouillon-note" ${etat.brouillonNote ? 'checked' : ''}> Note hors récit</label>
       <button class="principal" style="flex:0 0 46%" data-action="j-ajouter">Ajouter</button>
@@ -1126,6 +1153,17 @@ async function vueReglages() {
   </div>
 
   <div class="carte">
+    <h2>Apparence</h2>
+    <h3>Ambiance hors partie</h3>
+    <div class="puces">${Object.entries(AMBIANCES).map(([k, n]) =>
+      `<button class="puce ${k === etat.ambianceHors ? 'choisie' : ''}" data-action="ambiance-hors" data-v="${k}">${n}</button>`).join('')}</div>
+    <p class="discret petit">Chaque partie choisit la sienne (Parties › Modifier). Le clair ou le sombre suit le réglage de l'iPhone.</p>
+    <h3>Animations des tirages</h3>
+    <div class="puces">${[[true, 'Oui'], [false, 'Non']].map(([v, l]) =>
+      `<button class="puce ${v === etat.animations ? 'choisie' : ''}" data-action="animations" data-v="${v}">${l}</button>`).join('')}</div>
+  </div>
+
+  <div class="carte">
     <h2>À propos</h2>
     <p class="discret petit">Carnet JDR ${VERSION_APP} · données stockées uniquement sur cet appareil${persistant === true ? ' (stockage persistant accordé)' : persistant === false ? ' (stockage non persistant : pense aux sauvegardes)' : ''}.</p>
     <p class="discret petit">Sur iPhone et iPad, l'appli de l'écran d'accueil a son propre stockage, distinct de Safari : importe tes fichiers depuis l'appli installée.</p>
@@ -1137,22 +1175,35 @@ async function vueReglages() {
 /* ---------- Rendu et événements ---------- */
 async function rendre() {
   const vues = { ouinon: vueOuiNon, mots: vueMots, evenements: vueEvenements, des: vueDes, jeu: vueJeu, journal: vueJournal, parties: vueParties, reglages: vueReglages };
+  if (etat.vue !== 'parties') etat.apercuAmbiance = null;
+  appliquerAmbiance(etat.apercuAmbiance || ambianceDe(etat.partie));
   $('#titre-vue').textContent = TITRES[etat.vue];
   const bp = $('#btn-partie');
   bp.textContent = etat.partie ? etat.partie.nom : 'Hors partie';
   bp.classList.toggle('sans', !etat.partie);
-  document.querySelectorAll('.onglets button').forEach(b => b.classList.toggle('actif', b.dataset.vue === etat.vue));
+  document.querySelectorAll('.onglets button').forEach(b => b.classList.toggle('actif', b.dataset.vue === etat.vue || (b.dataset.vue === 'oracle' && estOracleVue())));
   const q = $('#question'); if (q) etat.questionEnCours = q.value;
   const br = $('#brouillon'); if (br) { etat.brouillon = br.value; etat.brouillonNote = !!$('#brouillon-note')?.checked; }
   if ($('#des-libelle')) etat.des = normaliserDes({ ...etat.des, ...lireOptionsDes() });
   // Les volets ouverts le restent après un jet
   document.querySelectorAll('details[data-garde]').forEach(d => { etat.ouverts[d.dataset.garde] = d.open; });
-  $('#vue').innerHTML = await vues[etat.vue]();
+  const estOracle = VUES_ORACLE.some(([v]) => v === etat.vue);
+  const selecteur = estOracle ? `<div class="segments" role="tablist">${VUES_ORACLE.map(([v, n]) =>
+    `<button role="tab" aria-selected="${v === etat.vue}" class="${v === etat.vue ? 'actif' : ''}" data-action="sous-oracle" data-v="${v}">${n}</button>`).join('')}</div>` : '';
+  $('#vue').innerHTML = selecteur + await vues[etat.vue]();
+  if (etat.animer) {   // seulement le résultat qui vient d'être tiré, pas à chaque rafraîchissement
+    etat.animer = false;
+    $('#vue').querySelectorAll('.resultat, .carte-evt').forEach(el => el.classList.add('neuf'));
+  }
   document.querySelectorAll('details[data-garde]').forEach(d => { if (etat.ouverts[d.dataset.garde]) d.open = true; });
   if (etat.defilerBas) { etat.defilerBas = false; window.scrollTo(0, document.body.scrollHeight); }
 }
 
+function estOracleVue() { return VUES_ORACLE.some(([v]) => v === etat.vue); }
+
 async function allerA(vue) {
+  if (vue === 'oracle') vue = estOracleVue() ? etat.vue : (etat.sousOracle || 'ouinon');
+  if (VUES_ORACLE.some(([v]) => v === vue)) etat.sousOracle = vue;
   etat.vue = vue;
   etat.menu = null; etat.edition = null;
   if (vue === 'journal') etat.defilerBas = true;
@@ -1186,6 +1237,14 @@ document.addEventListener('change', async e => {
     rendre();
   }
   if (['des-libelle', 'des-comp', 'des-seuil'].includes(el.id)) await majDes(lireOptionsDes());
+  if (el.id === 'p-ambiance' || el.id === 'p-module') {
+    const f = etat.formPartie;
+    const choix = $('#p-ambiance').value;
+    const module = $('#p-module')?.value || null;
+    etat.apercuAmbiance = ambianceDe({ ambiance: choix, module });
+    if (f) { f.ambiance = choix; f.module = module || ''; f.nom = $('#p-nom').value; f.jeu = $('#p-jeu').value; }
+    appliquerAmbiance(etat.apercuAmbiance);
+  }
 });
 
 document.addEventListener('click', async e => {
@@ -1263,26 +1322,28 @@ document.addEventListener('click', async e => {
       }
 
       /* Parties */
-      case 'p-nouvelle': etat.formPartie = { nom: '', jeu: '', module: modulesImportes().length === 1 ? modulesImportes()[0].id : '' }; return rendre();
-      case 'p-modifier': { const p = etat.parties.find(x => x.id === b.dataset.id); etat.formPartie = { id: p.id, nom: p.nom, jeu: p.jeu, module: p.module || '' }; window.scrollTo(0, 0); return rendre(); }
-      case 'p-annuler': etat.formPartie = null; return rendre();
+      case 'p-nouvelle': etat.formPartie = { nom: '', jeu: '', ambiance: '', module: modulesImportes().length === 1 ? modulesImportes()[0].id : '' }; return rendre();
+      case 'p-modifier': { const p = etat.parties.find(x => x.id === b.dataset.id); etat.formPartie = { id: p.id, nom: p.nom, jeu: p.jeu, module: p.module || '', ambiance: p.ambiance || '' }; window.scrollTo(0, 0); return rendre(); }
+      case 'p-annuler': etat.formPartie = null; etat.apercuAmbiance = null; return rendre();
       case 'p-valider': {
         const nom = $('#p-nom').value.trim();
         if (!nom) return toast('Donne un nom à la partie');
         const module = $('#p-module')?.value || null;
         const jeu = $('#p-jeu').value.trim() || (module ? etat.contenus.find(c => c.id === module)?.donnees.nom || '' : '');
+        const ambiance = $('#p-ambiance')?.value || '';
         const f = etat.formPartie;
-        etat.formPartie = null;
+        etat.formPartie = null; etat.apercuAmbiance = null;
         if (f.id) {
           const p = etat.parties.find(x => x.id === f.id);
-          p.nom = nom; p.jeu = jeu; p.module = module; p.majLe = maintenant();
+          p.nom = nom; p.jeu = jeu; p.module = module; p.ambiance = ambiance; p.majLe = maintenant();
           if (etat.partie?.id === p.id) etat.partie = p;
           await DB.mettre('parties', p); await chargerParties(); await signalerChangement();
           return rendre();
         }
         const cases = [...document.querySelectorAll('.p-deck')];
         const decks = cases.length ? cases.filter(x => x.checked).map(x => x.value) : await kv.get('decksActifs', null);
-        await creerPartie(nom, jeu, decks, module);
+        const nouvelle = await creerPartie(nom, jeu, decks, module);
+        if (ambiance) { nouvelle.ambiance = ambiance; await DB.mettre('parties', nouvelle); await chargerParties(); }
         etat.brouillon = '';
         toast(`Partie « ${nom} » ouverte`);
         return allerA('journal');
@@ -1308,6 +1369,9 @@ document.addEventListener('click', async e => {
       case 'export-copier': return copierTexte(await texteExport());
 
       /* Réglages */
+      case 'sous-oracle': return allerA(b.dataset.v);
+      case 'ambiance-hors': etat.ambianceHors = b.dataset.v; await kv.set('ambianceHors', b.dataset.v); return rendre();
+      case 'animations': etat.animations = b.dataset.v === 'true'; await kv.set('animations', etat.animations); return rendre();
       case 'rappel': await kv.set('rappelJours', Number(b.dataset.v)); await verifierRappel(); return rendre();
       case 'activer': await kv.set('oracleActif', b.dataset.id); await chargerContenus(); etat.dernier = {}; return rendre();
       case 'suppr-contenu': {
@@ -1353,6 +1417,8 @@ document.addEventListener('click', async e => {
   try { if (navigator.storage?.persist) await navigator.storage.persist(); } catch { }
   await chargerContenus();
   await chargerParties();
+  etat.ambianceHors = await kv.get('ambianceHors', 'carnet');
+  etat.animations = await kv.get('animations', true);
   etat.brouillon = await kv.get('brouillon:' + (etat.partie?.id ?? 'hors'), '');
   await verifierRappel();
   await rendre();

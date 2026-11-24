@@ -1,43 +1,85 @@
+/* ---------- Ambiances (1.7.0) ----------
+   Chaque partie choisit la sienne : carnet de cuir, livre de bord ou console.
+   Le clair ou le sombre suit le réglage de l'appareil. */
 :root {
-  --fond: #16181d;
-  --surface: #20232a;
-  --surface-2: #2a2e37;
-  --bord: #353a45;
-  --texte: #e9e6df;
-  --texte-2: #a7a59f;
-  --accent: #d9a441;
-  --accent-texte: #1a1408;
-  --oui: #7fb77e;
-  --non: #d9776b;
-  --nuance: #c9b27a;
-  --rayon: 14px;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --police-titre: var(--serif);
+  --police-recit: var(--serif);
+  --police-meca: var(--mono);
+  --style-titre: normal;
+  --rayon: 10px;
   --sab: env(safe-area-inset-bottom, 0px);
   --sat: env(safe-area-inset-top, 0px);
-  color-scheme: dark;
+
+  /* Carnet de cuir, clair : papier crème, encre brune, rouge sang de bœuf */
+  --fond: #efe4cc;
+  --surface: #f8f1e1;
+  --surface-2: #e9dcbf;
+  --bord: #d6c39d;
+  --texte: #3a2a1a;
+  --texte-2: #76604a;
+  --accent: #8a3b1e;
+  --accent-texte: #fff8ee;
+  --oui: #4d6b2a;
+  --non: #9b2d20;
+  --nuance: #8a6d2a;
+  --marge: #c98f78;
+  color-scheme: light;
 }
-@media (prefers-color-scheme: light) {
+:root[data-ambiance="carnet"] { --style-titre: italic; }
+@media (prefers-color-scheme: dark) {
+  /* Carnet de cuir, sombre : cuir brun, encre crème */
   :root {
-    --fond: #f4f1ea;
-    --surface: #ffffff;
-    --surface-2: #ece8df;
-    --bord: #d8d2c5;
-    --texte: #24211c;
-    --texte-2: #6b665d;
-    --accent: #a8741a;
-    --accent-texte: #ffffff;
-    --oui: #3f7f3e;
-    --non: #b14a3e;
-    --nuance: #8a6d2a;
-    color-scheme: light;
+    --fond: #1d1611; --surface: #282018; --surface-2: #33291f; --bord: #4a3b2c;
+    --texte: #efe3cc; --texte-2: #b5a284; --accent: #d68e5e; --accent-texte: #1d1611;
+    --oui: #a3c47b; --non: #e58d76; --nuance: #d8b46a; --marge: #6e4a33;
+    color-scheme: dark;
   }
 }
+
+/* Livre de bord, clair : papier bleuté, encre marine, laiton */
+:root[data-ambiance="bord"] {
+  --fond: #e7edf1; --surface: #f7f9fa; --surface-2: #dbe4ea; --bord: #b9c8d2;
+  --texte: #14283a; --texte-2: #52687a; --accent: #8a6a1c; --accent-texte: #ffffff;
+  --oui: #2f6b45; --non: #a33a2a; --nuance: #8a6a1c; --marge: #c9b37a;
+}
+@media (prefers-color-scheme: dark) {
+  /* Livre de bord, sombre : bleu nuit et laiton */
+  :root[data-ambiance="bord"] {
+    --fond: #101a23; --surface: #16232f; --surface-2: #1d2d3b; --bord: #2b3f51;
+    --texte: #e6dcc4; --texte-2: #98a9b6; --accent: #cfa64c; --accent-texte: #101a23;
+    --oui: #8fc49a; --non: #e58b79; --nuance: #cfa64c; --marge: #5b4d2a;
+  }
+}
+
+/* Console, clair : écran pâle, vert profond */
+:root[data-ambiance="console"] {
+  --police-titre: var(--mono);
+  --rayon: 4px;
+  --fond: #edf2eb; --surface: #fafcf9; --surface-2: #e0e8de; --bord: #c0cfc1;
+  --texte: #10241a; --texte-2: #4b6955; --accent: #1f7a3c; --accent-texte: #ffffff;
+  --oui: #1f7a3c; --non: #b3362a; --nuance: #a06a00; --marge: #9cc2a6;
+}
+@media (prefers-color-scheme: dark) {
+  /* Console, sombre : terminal vert */
+  :root[data-ambiance="console"] {
+    --fond: #0a0f0c; --surface: #101813; --surface-2: #17211b; --bord: #243529;
+    --texte: #cfe8d3; --texte-2: #7fa58a; --accent: #7fdc95; --accent-texte: #07110a;
+    --oui: #7fdc95; --non: #ff8b7b; --nuance: #f0c060; --marge: #2c5a38;
+  }
+}
+
+[hidden] { display: none !important; }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; height: 100%; }
 body {
   background: var(--fond);
   color: var(--texte);
-  font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font: 16px/1.45 var(--sans);
+  transition: background-color .3s, color .3s;
   -webkit-text-size-adjust: 100%;
   display: flex;
   flex-direction: column;
@@ -387,3 +429,128 @@ details.creature summary { cursor: pointer; }
 .puces.petites .puce small { opacity: .7; }
 .carte-interne { border: 1px solid var(--bord); border-radius: 10px; padding: 10px; margin-top: 6px; }
 .reserve-age .reponse.petit-rep { min-width: 2.2em; text-align: center; }
+
+/* ---------- Refonte 1.7.0 : typographie, journal, oracle, animations ---------- */
+.entete h1, .carte h2, .titre.grand, .partie .titre, .carte > .titre {
+  font-family: var(--police-titre); font-style: var(--style-titre); letter-spacing: 0;
+}
+.entete h1 { font-size: 1.55rem; font-weight: 600; }
+.carte h2 { font-size: 1.08rem; }
+:root[data-ambiance="console"] .entete h1::before { content: "> "; color: var(--accent); }
+:root[data-ambiance="console"] .carte h2 { text-transform: lowercase; letter-spacing: .02em; }
+:root[data-ambiance="bord"] .carte h2 { font-variant: small-caps; letter-spacing: .04em; }
+
+.btn-partie { font-family: var(--police-titre); font-style: var(--style-titre); }
+.bandeau { border-color: var(--accent); }
+
+/* Sélecteur de l'oracle */
+.segments {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
+  padding: 4px; margin: 0 0 14px; border-radius: calc(var(--rayon) + 4px);
+  background: var(--surface-2); border: 1px solid var(--bord);
+}
+.segments button {
+  min-height: 38px; padding: 6px 4px; border: 0; background: none; border-radius: var(--rayon);
+  color: var(--texte-2); font-size: .9rem;
+}
+.segments button.actif { background: var(--surface); color: var(--texte); font-weight: 650; box-shadow: 0 0 0 1px var(--bord); }
+.onglets { grid-template-columns: repeat(5, 1fr); }
+.onglets button { font-size: .7rem; }
+
+/* Journal : la page */
+.carte.journal { padding: 18px 16px 18px 18px; }
+:root[data-ambiance="bord"] .carte.journal {
+  /* trait de marge vertical, comme un registre */
+  background-image: linear-gradient(to right, transparent 10px, var(--marge) 10px, var(--marge) 11px, transparent 11px);
+}
+h3.seance {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  margin: 26px 0 10px; padding: 0 0 6px; border-bottom: 1px solid var(--bord);
+  color: var(--accent); font-family: var(--police-titre); font-style: var(--style-titre);
+  font-size: 1.2rem; font-weight: 600;
+}
+h3.seance .seance-date { font-family: var(--sans); font-style: normal; font-size: .78rem; font-weight: 400; color: var(--texte-2); }
+:root[data-ambiance="carnet"] h3.seance { justify-content: center; border-bottom: 0; text-align: center; }
+:root[data-ambiance="carnet"] h3.seance .seance-num::before { content: "❧ "; }
+:root[data-ambiance="carnet"] h3.seance .seance-date { flex-basis: 100%; text-align: center; margin-top: -4px; }
+:root[data-ambiance="bord"] h3.seance { font-family: var(--mono); font-style: normal; font-size: .92rem; letter-spacing: .08em; text-transform: uppercase; }
+:root[data-ambiance="bord"] h3.seance .seance-num::before { content: "Livre de bord — "; }
+:root[data-ambiance="console"] h3.seance { font-size: .95rem; border-bottom-style: dashed; }
+:root[data-ambiance="console"] h3.seance .seance-num::before { content: "## "; }
+
+/* Le récit, dans la voix du livre */
+.j-texte .prose, textarea.recit {
+  font-family: var(--police-recit); font-size: 1.07rem; line-height: 1.62;
+}
+.j-texte { padding: 6px 0 !important; }
+.j-texte.ouverture .prose::first-letter {
+  float: left; font-size: 3.1em; line-height: .9; margin: .06em .05em 0 0;
+  color: var(--accent); font-family: var(--police-titre); font-style: normal;
+}
+:root[data-ambiance="console"] .j-texte.ouverture .prose::first-letter { float: none; font-size: inherit; margin: 0; line-height: inherit; }
+.j-texte.note .prose { font-family: var(--sans); font-size: .92rem; }
+
+/* Les mécaniques, en notes de marge */
+.journal-liste li.j-meca {
+  font-family: var(--police-meca); font-size: .78rem; line-height: 1.45;
+  margin: 4px 0 4px 4px; padding: 3px 0 3px 10px !important;
+  border-left: 2px solid var(--marge); gap: 8px;
+}
+.j-meca .ico-meca { flex: 0 0 16px; opacity: 1; color: var(--accent); }
+.j-meca.t-ouinon { border-left-color: var(--accent); }
+.j-meca.t-ouinon .quoi { color: var(--texte); }
+.j-meca .quand { font-size: .68rem; }
+.page-blanche { text-align: center; padding: 18px 8px 8px; }
+.page-blanche-titre { font-family: var(--police-titre); font-style: var(--style-titre); font-size: 1.3rem; color: var(--accent); margin-bottom: 4px; }
+
+/* L'oracle répond d'un coup de tampon */
+.reponse.tampon {
+  display: inline-block; margin: 6px 0 4px; padding: 4px 14px;
+  border: 2px solid currentColor; border-radius: 6px;
+  transform: rotate(-3deg);
+  font-family: var(--police-titre); font-style: var(--style-titre);
+}
+:root[data-ambiance="bord"] .reponse.tampon, :root[data-ambiance="console"] .reponse.tampon {
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: .06em; font-size: 1.3rem;
+}
+:root[data-ambiance="console"] .reponse.tampon { border-style: dashed; transform: none; }
+
+/* Cartes d'événement : un peu de matière */
+.carte-evt { border-left: 3px solid var(--accent); }
+.carte-evt .titre { font-family: var(--police-titre); font-style: var(--style-titre); font-size: 1.05rem; }
+.carte-evt .texte { font-family: var(--police-recit); }
+.mot { font-family: var(--police-titre); font-style: var(--style-titre); }
+.de-res { font-family: var(--mono); }
+
+/* Console : curseur qui clignote à la fin du dernier texte */
+:root[data-ambiance="console"] .journal-liste:last-of-type li.j-texte:last-child .prose::after {
+  content: "▌"; color: var(--accent); margin-left: 2px; animation: curseur 1.1s steps(1) infinite;
+}
+@keyframes curseur { 50% { opacity: 0; } }
+
+/* Animations, seulement sur le tirage qui vient d'avoir lieu */
+.resultat { animation: none; }
+.resultat.neuf { animation: apparait .25s ease-out; }
+.resultat.neuf .reponse.tampon { animation: tampon .42s cubic-bezier(.2, .9, .3, 1.25) both; }
+@keyframes tampon {
+  0% { opacity: 0; transform: scale(1.9) rotate(-9deg); }
+  60% { opacity: 1; transform: scale(.94) rotate(-2deg); }
+  100% { transform: scale(1) rotate(-3deg); }
+}
+:root[data-ambiance="console"] .resultat.neuf .reponse.tampon { animation: tapee .5s steps(6) both; }
+@keyframes tapee { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+.carte-evt.neuf { animation: retourne .45s ease-out both; transform-origin: center; }
+.carte-evt.neuf:nth-of-type(2) { animation-delay: .12s; }
+.carte-evt.neuf:nth-of-type(3) { animation-delay: .24s; }
+.carte-evt.neuf:nth-of-type(4) { animation-delay: .36s; }
+@keyframes retourne { from { opacity: 0; transform: perspective(600px) rotateY(85deg); } to { opacity: 1; transform: none; } }
+.resultat.neuf .de-res { animation: roule .4s ease-out both; }
+.resultat.neuf .de-res:nth-child(2) { animation-delay: .05s; }
+.resultat.neuf .de-res:nth-child(3) { animation-delay: .1s; }
+.resultat.neuf .de-res:nth-child(n+4) { animation-delay: .15s; }
+@keyframes roule { from { opacity: 0; transform: translateY(-10px) rotate(-200deg) scale(.6); } to { opacity: 1; transform: none; } }
+
+:root[data-anim="non"] *, :root[data-anim="non"] *::before, :root[data-anim="non"] *::after { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
